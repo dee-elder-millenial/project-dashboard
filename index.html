@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dee's Project Dashboard</title>
+    <link rel="stylesheet" href="assets/styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <img src="assets/project-mark.svg" alt="" width="44" height="44">
+        <div>
+          <h1>Project Dashboard</h1>
+          <p id="dashboardStatus">Loading project map...</p>
+        </div>
+      </div>
+      <nav class="header-actions" aria-label="Dashboard links">
+        <a href="http://dees-workbench.local:8088/">Archive</a>
+        <a href="http://dees-workbench.local:8088/finance.html">Finance</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="overview" aria-label="Project overview">
+        <article>
+          <span class="label">Projects</span>
+          <strong id="projectCount">0</strong>
+        </article>
+        <article>
+          <span class="label">Active</span>
+          <strong id="activeCount">0</strong>
+        </article>
+        <article>
+          <span class="label">Blocked</span>
+          <strong id="blockedCount">0</strong>
+        </article>
+        <article>
+          <span class="label">Updated</span>
+          <strong id="updatedAt">Unknown</strong>
+        </article>
+      </section>
+
+      <section class="workload-panel" aria-label="Project state distribution">
+        <div>
+          <span class="label">Portfolio State</span>
+          <h2>Current Workload</h2>
+        </div>
+        <div id="stateBars" class="state-bars"></div>
+      </section>
+
+      <section class="controls" aria-label="Find projects">
+        <input id="search" type="search" placeholder="Search projects, paths, next actions">
+        <div id="filters" class="filters" aria-label="State filters"></div>
+      </section>
+
+      <section class="dashboard-grid" aria-label="Project dashboard">
+        <aside class="focus-panel command-panel">
+          <span class="label">Command Center</span>
+          <h2 id="focusName">No project selected</h2>
+          <p id="focusSummary" class="focus-brief"></p>
+
+          <div class="command-strip">
+            <div>
+              <span class="label">State</span>
+              <strong id="focusState" class="state-pill">Unknown</strong>
+            </div>
+            <div>
+              <span class="label">Blockers</span>
+              <strong id="focusBlockerCount">0</strong>
+            </div>
+          </div>
+
+          <section class="command-block command-next">
+            <h3>Next Moves</h3>
+            <ol id="focusActions"></ol>
+          </section>
+
+          <section class="command-block command-blockers">
+            <h3>Blockers</h3>
+            <ul id="focusBlockers"></ul>
+          </section>
+
+          <details class="command-details">
+            <summary>Paths and handoff</summary>
+            <dl>
+              <div>
+                <dt>Path</dt>
+                <dd id="focusPath" class="mono"></dd>
+              </div>
+              <div>
+                <dt>Resume</dt>
+                <dd id="focusResume" class="mono"></dd>
+              </div>
+            </dl>
+          </details>
+
+          <div class="focus-buttons">
+            <a id="focusLink" href="#" target="_blank" rel="noopener">Open</a>
+            <button id="copyResume" type="button">Copy Resume</button>
+          </div>
+        </aside>
+
+        <section class="project-section">
+          <div class="section-heading">
+            <div>
+              <span class="label">Project List</span>
+              <h2 id="resultCount">0 projects</h2>
+            </div>
+          </div>
+          <div id="projectCards" class="project-cards"></div>
+        </section>
+      </section>
+
+      <section class="activity-panel" aria-label="Recent activity">
+        <div class="section-heading">
+          <div>
+            <span class="label">Continuity</span>
+            <h2>Recent Activity</h2>
+          </div>
+        </div>
+        <div id="activityRows" class="activity-rows"></div>
+      </section>
+    </main>
+
+    <script src="assets/app.js"></script>
+  </body>
+</html>

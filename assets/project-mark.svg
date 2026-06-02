@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Project dashboard mark">
+  <rect width="64" height="64" rx="22" fill="#211b2a"/>
+  <path d="M16 21h24M16 33h17M16 45h22" fill="none" stroke="#a8ddff" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="48" cy="21" r="6" fill="#b8f5c8"/>
+  <circle cx="40" cy="33" r="6" fill="#ffe08f"/>
+  <circle cx="46" cy="45" r="6" fill="#ffb8cf"/>
+  <path d="M50 8l1.6 3.2 3.6.5-2.6 2.5.7 3.5-3.3-1.7-3.2 1.7.6-3.5-2.6-2.5 3.6-.5z" fill="#f0dcff"/>
+  <path d="M24 12c0-3 4-4 6-1 2-3 6-2 6 1 0 4-6 7-6 7s-6-3-6-7z" fill="#ff9fc0"/>
+</svg>
