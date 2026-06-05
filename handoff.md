@@ -46,7 +46,7 @@ git@github.com:dee-elder-millenial/project-dashboard.git
 Latest known pushed commit:
 
 ```text
-ae43d61 Polish project dashboard command center design
+ecd14a0 Fill overview card row
 ```
 
 ## What changed this session
@@ -84,6 +84,8 @@ ae43d61 Polish project dashboard command center design
   - Added the first ingest safety guardrails: stronger schema/data validation, payload and array limits, secret-looking visible-field detection, portable optional path-prefix enforcement via `PROJECT_DASHBOARD_ALLOWED_PATH_PREFIXES`, and dry-run-first writes that require `--apply`. Updated the daily agent to read SQLite directly and pass `--apply` when it intentionally creates detected project records.
   - Added API authorization: all `/api/*` GET routes require an allowed Cloudflare Access email or server-only write token; `POST /api/project-state` allows the same auth and can change only project state; `POST /api/sync-selected-project` is internal-token-only. The visible dashboard write control is limited to changing project state.
   - Added state-change history at `GET /api/state-audit?limit=50` and hidden `ai_context.last_state_change` metadata for future AI handoff packets.
+  - Added `/srv/cloud-mirror/AI Agent Discovery Test/` with handoff/agent/status files as an intentionally untracked discovery seed. It is not in SQLite yet; the daily agent should discover it on the next scheduled scan if the scan rules match it.
+  - Removed the top-level `Blocked` overview card from desktop and mobile, then widened the remaining overview cards so the row fills cleanly.
 - Reworked the visual design from a rough dark-purple dashboard into a polished dark command-center layout.
 - Added stronger hierarchy, cleaner cards, tighter spacing, improved state colors, and better responsive behavior.
 - Converted the selected-project sidebar into a more useful Command Center panel.
