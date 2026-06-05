@@ -198,7 +198,6 @@ function renderOverview() {
   const projects = dashboardProjects();
   text("projectCount", projects.length.toLocaleString());
   text("activeCount", projects.filter((project) => project.state === "Active").length.toLocaleString());
-  text("blockedCount", projects.filter((project) => (project.blockers || []).length > 0).length.toLocaleString());
   text("updatedAt", formatDate(dashboard.data.generated_at));
   text("mobileStatus", `${projects.length} projects from ${dashboard.data.source_root}`);
   renderBudget();
