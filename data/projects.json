@@ -2,5 +2,5 @@
   "ok": false,
   "error": "Project Dashboard runtime data now comes from /api/dashboard backed by SQLite. If you are seeing this file, the database/API path is unavailable.",
   "database": "/srv/cloud-mirror/project-dashboard/data/projects.sqlite3",
-  "generated_at": "2026-06-05T23:03:47Z"
+  "generated_at": "2026-06-05T23:14:30Z"
 }
