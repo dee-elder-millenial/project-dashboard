@@ -950,7 +950,7 @@ class HostRoutingHandler(SimpleHTTPRequestHandler):
 
         authorized, status, auth_payload = self.api_authorization(
             write=True,
-            allow_cloudflare_user=request_path == "/api/project-state",
+            allow_cloudflare_user=request_path in {"/api/project-state", "/api/sync-selected-project"},
         )
         if not authorized:
             json_response(self, status, auth_payload)

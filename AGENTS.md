@@ -25,7 +25,7 @@ Direct edits to `data/projects.json` are only acceptable when repairing the diag
 
 Only edit site code for actual dashboard UI or behavior changes. Do not edit site code merely to update project content.
 
-Browser/user writes are limited to project state changes through `POST /api/project-state`. AI sync is internal-token-only through local automation.
+Browser/user writes are limited to project state changes through `POST /api/project-state` and explicit selected-project AI sync through `POST /api/sync-selected-project`. Both require an allowed Cloudflare Access user or the internal write token; sync also requires the explicit selected-project user-action header/body and must keep the budget guardrails intact.
 
 ## Resume Logging
 

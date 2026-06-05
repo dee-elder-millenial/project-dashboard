@@ -188,7 +188,7 @@ The dashboard uses as few API calls as possible:
 
 - Loading the dashboard makes zero OpenAI API calls.
 - The AI Budget card reads local `ai_spend` metadata plus `/api/ai-budget`; it does not call OpenAI.
-- Browser users can update only the selected project's state. AI sync writes are internal automation only.
+- Browser users can update the selected project's state or explicitly sync the selected project. Sync still runs server-side and is protected by auth, confirmation, budget caps, daily call caps, and cooldowns.
 
 Server environment variables:
 
@@ -213,7 +213,7 @@ PROJECT_DASHBOARD_WRITE_TOKEN=<server-only random token>
 
 The dashboard budget is intentionally small because the OpenAI API budget is shared with other projects. The sync route also requires an explicit selected-project user action, enforces a per-sync cap, daily cap, monthly cap, daily call count, and cooldown before any OpenAI call is made. The default model and pricing values match `gpt-5-mini` standard text-token pricing as checked on 2026-06-05. Update the env vars if the model or pricing changes.
 
-All `/api/*` GET routes require either an allowed Cloudflare Access user email header or the server-only `X-Project-Dashboard-Write-Token` header. Browser/user writes go through `POST /api/project-state`, which has the same auth requirement and can change only project state. `POST /api/sync-selected-project` is internal-token-only for local automation. Browser JavaScript does not contain the token.
+All `/api/*` GET routes require either an allowed Cloudflare Access user email header or the server-only `X-Project-Dashboard-Write-Token` header. Browser/user state writes go through `POST /api/project-state`, which has the same auth requirement and can change only project state. `POST /api/sync-selected-project` requires either an allowed Cloudflare Access user email or the internal write token, plus an explicit selected-project user action header/body. Browser JavaScript does not contain the token.
 
 State-change history is available through:
 

@@ -823,7 +823,7 @@ async function syncSelectedProject() {
     });
     const payload = await response.json();
     if (response.status === 401 || response.status === 403) {
-      throw new Error(payload.error || "Not authorized to change project state.");
+      throw new Error(payload.error || "Not authorized to sync the selected project.");
     }
     if (!response.ok || !payload.ok) {
       throw new Error(payload.error || `HTTP ${response.status}`);
@@ -838,7 +838,7 @@ async function syncSelectedProject() {
     await loadAiBudget();
   } finally {
     button.disabled = false;
-    text("syncSelectedProject", "Sync Selected");
+    text("syncSelectedProject", "Sync");
   }
 }
 
@@ -961,6 +961,7 @@ async function init() {
   document.getElementById("calendarNext").addEventListener("click", () => moveCalendarMonth(1));
   document.getElementById("copyResume").addEventListener("click", copyResume);
   document.getElementById("saveProjectState").addEventListener("click", saveProjectState);
+  document.getElementById("syncSelectedProject").addEventListener("click", syncSelectedProject);
   document.getElementById("openChatGPT").addEventListener("click", () => {
     copyResumeShellCommand("chatgpt", "openChatGPT", "ChatGPT");
   });

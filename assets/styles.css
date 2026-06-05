@@ -698,7 +698,7 @@ dd {
 
 .focus-buttons {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 0.85fr 1.3fr 0.85fr;
   gap: 10px;
 }
 
@@ -1458,7 +1458,7 @@ input {
 
 .command-panel .focus-buttons {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 0.85fr 1.3fr 0.85fr;
   border-top: 1px solid var(--line);
   margin-top: 0;
   padding-top: 12px;

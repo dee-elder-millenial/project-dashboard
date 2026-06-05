@@ -30,7 +30,8 @@
           <p>
             Project Dashboard is a local-first command center for `/srv/cloud-mirror`.
             It keeps a validated SQLite project database, requires API authorization,
-            limits browser writes to project state changes, and keeps AI sync internal.
+            limits browser writes to state changes and explicit selected-project syncs,
+            and keeps every AI call behind server-side guardrails.
           </p>
         </div>
         <div class="manual-callout">
@@ -74,7 +75,7 @@
             <h2 id="map-title">Request and Data Flow</h2>
           </div>
         </div>
-        <div class="architecture-diagram" role="img" aria-label="Browser traffic enters through Cloudflare Access, reaches the host router, authenticates API reads and state writes, stores project data in SQLite, and keeps AI sync internal-token-only.">
+        <div class="architecture-diagram" role="img" aria-label="Browser traffic enters through Cloudflare Access, reaches the host router, authenticates API reads, state writes, and selected-project syncs, then stores project data in SQLite.">
           <svg viewBox="0 0 1180 640" aria-hidden="true">
             <defs>
               <marker id="arrow-main" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -151,7 +152,7 @@
             <path class="connector strong" d="M 888 300 C 832 388, 812 506, 744 520"></path>
 
             <rect class="caption" x="270" y="584" width="650" height="44" rx="18"></rect>
-            <text class="caption-text" x="308" y="611">Browser writes are state-only. AI sync is internal-token-only. All API reads require Access email or token.</text>
+            <text class="caption-text" x="308" y="611">Browser writes are state changes or selected syncs. All API routes require Access email or token.</text>
           </svg>
         </div>
       </section>
@@ -175,7 +176,7 @@
         <article class="manual-panel">
           <span class="label">Feature</span>
           <h2>AI Sync</h2>
-          <p>Browser users can change only the selected project state. AI sync remains an internal-token-only automation path.</p>
+          <p>Allowed browser users can run one selected-project sync from the Command Center. The server still requires explicit user-action headers, budget caps, daily call caps, cooldowns, and database verification.</p>
         </article>
       </section>
 
@@ -338,7 +339,7 @@ curl -fsS -H 'Host: projects.dees-workbench.com' \
               </tr>
               <tr>
                 <td>`POST /api/sync-selected-project`</td>
-                <td>Requires server-only write token, then runs one guarded OpenAI sync for one selected project.</td>
+                <td>Requires allowed Cloudflare Access email or server-only write token, then runs one guarded OpenAI sync for one selected project.</td>
                 <td>Writes SQLite after validation, backup, audit, and verification.</td>
               </tr>
             </tbody>
