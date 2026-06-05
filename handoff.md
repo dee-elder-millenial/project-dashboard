@@ -43,10 +43,10 @@ GitHub repository:
 git@github.com:dee-elder-millenial/project-dashboard.git
 ```
 
-Latest functional dashboard commit:
+Check the latest pushed dashboard commit with:
 
-```text
-250b669 Restore guarded project sync button
+```bash
+git -C /srv/cloud-mirror/project-dashboard log -1 --oneline
 ```
 
 ## What changed this session
@@ -54,7 +54,7 @@ Latest functional dashboard commit:
 - 2026-06-04 wrap-up:
   - Public URL moved to `https://projects.dees-workbench.com/`.
   - Project Dashboard is now behind Cloudflare Access.
-  - `home.dees-workbench.com` now serves Dee's employer-facing personal site from the Workbench/Home root.
+  - `home.dees-workbench.com` now serves Dee's employer-facing personal site from `/srv/cloud-mirror/About Dee Homepage/site`; the old Prepper Disk archive remains available under `/prepper/`.
   - Dashboard data should include the new Personal Home Site project entry.
   - Dashboard now supports `Complete` and `On Hold` states in the ingest validator, desktop filters/bars, mobile filters, and state-pill styling.
   - State filters are visibility toggles now, so individual states can be shown or hidden without switching to a single-state filter.

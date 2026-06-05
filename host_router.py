@@ -25,7 +25,7 @@ HOST = "0.0.0.0"
 PORT = 8090
 
 DASHBOARD_ROOT = Path("/srv/cloud-mirror/project-dashboard").resolve()
-HOME_ROOT = Path("/srv/cloud-mirror/PrepperDisk/site").resolve()
+HOME_ROOT = Path("/srv/cloud-mirror/About Dee Homepage/site").resolve()
 DATA_PATH = DASHBOARD_ROOT / "data" / "projects.json"
 DB_PATH = DASHBOARD_ROOT / "data" / "projects.sqlite3"
 BACKUP_ROOT = DASHBOARD_ROOT / "data" / "backups"
