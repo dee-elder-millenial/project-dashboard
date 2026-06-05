@@ -43,10 +43,10 @@ GitHub repository:
 git@github.com:dee-elder-millenial/project-dashboard.git
 ```
 
-Latest known pushed commit:
+Latest functional dashboard commit:
 
 ```text
-ecd14a0 Fill overview card row
+250b669 Restore guarded project sync button
 ```
 
 ## What changed this session
