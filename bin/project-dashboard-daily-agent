@@ -1,0 +1,398 @@
+#!/usr/bin/env python3
+"""
+Daily Project Dashboard activity agent.
+
+This job detects recently touched cloud-mirror projects, adds newly active
+project folders with conservative placeholder metadata, and asks the dashboard
+server to sync only the touched projects through the existing guarded endpoint.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+
+DASHBOARD_ROOT = Path("/srv/cloud-mirror/project-dashboard")
+DATA_PATH = DASHBOARD_ROOT / "data" / "projects.json"
+DB_PATH = DASHBOARD_ROOT / "data" / "projects.sqlite3"
+INGEST_PATH = DASHBOARD_ROOT / "bin" / "project-dashboard-ingest"
+SOURCE_ROOT = Path("/srv/cloud-mirror")
+API_BASE = "http://127.0.0.1:8090"
+
+sys.path.insert(0, str(DASHBOARD_ROOT))
+import project_store
+
+EXCLUDED_PARTS = {
+    ".git",
+    ".cache",
+    ".codex",
+    "__pycache__",
+    "node_modules",
+    "data/backups",
+    "lost+found",
+}
+
+EXCLUDED_NAMES = {
+    ".DS_Store",
+}
+
+EXCLUDED_PREFIXES = (
+    "._",
+)
+
+
+def utc_now() -> str:
+    return dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def env_bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Scan recent project work and run guarded dashboard syncs.")
+    parser.add_argument("--dry-run", action="store_true", help="Report detected projects without writing or syncing.")
+    parser.add_argument("--lookback-hours", type=int, default=env_int("PROJECT_DASHBOARD_DAILY_LOOKBACK_HOURS", 24))
+    parser.add_argument("--max-syncs", type=int, default=env_int("PROJECT_DASHBOARD_DAILY_MAX_SYNCS", 5))
+    parser.add_argument("--max-new-projects", type=int, default=env_int("PROJECT_DASHBOARD_DAILY_MAX_NEW_PROJECTS", 3))
+    parser.add_argument("--max-files", type=int, default=env_int("PROJECT_DASHBOARD_DAILY_MAX_FILES", 1500))
+    parser.add_argument("--max-wait-seconds", type=int, default=env_int("PROJECT_DASHBOARD_DAILY_MAX_WAIT_SECONDS", 900))
+    parser.add_argument(
+        "--source-root",
+        default=os.environ.get("PROJECT_DASHBOARD_DAILY_SOURCE_ROOT", str(SOURCE_ROOT)),
+        help="Root folder to scan. Default: /srv/cloud-mirror",
+    )
+    return parser.parse_args()
+
+
+def load_dashboard() -> dict[str, Any]:
+    return project_store.load_dashboard_from_db_required(DB_PATH)
+
+
+def normalize_path(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    path = value.strip()
+    if path.startswith("\\\\dees-workbench\\cloud-mirror\\"):
+        path = "/srv/cloud-mirror/" + path.split("\\cloud-mirror\\", 1)[1].replace("\\", "/")
+    return path.rstrip("/")
+
+
+def project_paths(projects: list[dict[str, Any]]) -> dict[str, str]:
+    return {project["id"]: normalize_path(project.get("path")) for project in projects}
+
+
+def is_excluded(path: Path) -> bool:
+    name = path.name
+    if name in EXCLUDED_NAMES or any(name.startswith(prefix) for prefix in EXCLUDED_PREFIXES):
+        return True
+
+    text = str(path)
+    if text.startswith(str(DASHBOARD_ROOT / "data" / "backups")):
+        return True
+    if path == DASHBOARD_ROOT / "data" / "projects.json":
+        return True
+
+    parts = set(path.parts)
+    if parts.intersection(EXCLUDED_PARTS):
+        return True
+
+    return False
+
+
+def recent_files(root: Path, since: float, max_files: int) -> list[Path]:
+    matches: list[tuple[float, Path]] = []
+    for path in root.rglob("*"):
+        if len(matches) >= max_files:
+            break
+        if not path.is_file() or is_excluded(path):
+            continue
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if mtime >= since:
+            matches.append((mtime, path))
+    matches.sort(reverse=True, key=lambda item: item[0])
+    return [path for _, path in matches]
+
+
+def longest_known_project(path: Path, known_paths: dict[str, str]) -> str | None:
+    path_text = str(path)
+    matches = [
+        (project_id, project_path)
+        for project_id, project_path in known_paths.items()
+        if project_path and (path_text == project_path or path_text.startswith(project_path + "/"))
+    ]
+    if not matches:
+        return None
+    matches.sort(key=lambda item: len(item[1]), reverse=True)
+    return matches[0][0]
+
+
+def candidate_root(path: Path, source_root: Path) -> Path | None:
+    try:
+        relative = path.relative_to(source_root)
+    except ValueError:
+        return None
+
+    parts = relative.parts
+    if not parts:
+        return None
+
+    if parts[0] == "temp":
+        return None
+    if parts[:2] == ("workspaces", "projects") and len(parts) >= 3:
+        return source_root / "workspaces" / "projects" / parts[2]
+    if parts[0] == "workspaces" and len(parts) >= 2:
+        return source_root / "workspaces" / parts[1]
+    return source_root / parts[0]
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or "detected-project"
+
+
+def titleize(value: str) -> str:
+    return re.sub(r"[-_]+", " ", value).strip().title() or value
+
+
+def find_resume_file(root: Path) -> str:
+    names = ("HANDOFF.md", "README.md", "START_HERE.md", "status.md", "AGENTS.md")
+    for name in names:
+        candidate = root / name
+        if candidate.exists():
+            return str(candidate)
+    for candidate in root.glob("**/HANDOFF.md"):
+        if is_excluded(candidate):
+            continue
+        return str(candidate)
+    return str(root)
+
+
+def new_project_payload(root: Path, latest_mtime: float) -> dict[str, Any]:
+    name = titleize(root.name)
+    project_id = slugify(root.name)
+    updated_at = dt.datetime.fromtimestamp(latest_mtime, dt.UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return {
+        "id": project_id,
+        "name": name,
+        "state": "Staged",
+        "updated_at": updated_at,
+        "path": str(root),
+        "resume_file": find_resume_file(root),
+        "summary": "Recently active project folder detected by the daily dashboard agent.",
+        "next_actions": [
+            "Review the detected folder and add a project handoff if this should stay on the dashboard.",
+        ],
+        "blockers": [],
+        "tags": ["detected", "daily-agent"],
+        "links": {"primary": "#", "primary_label": "View Folder"},
+        "ai_context": {
+            "last_machine": "dees-workbench",
+            "conversation_name": "Daily project activity scan",
+        },
+        "time_tracking": {
+            "approx_minutes_total": 0,
+            "confidence": "low",
+            "notes": "Initialized automatically by the daily dashboard agent.",
+            "sessions": [],
+        },
+        "ai_spend": {
+            "estimated_usd_total": 0,
+            "last_sync_estimated_usd": 0,
+            "currency": "USD",
+            "notes": "No API-backed sync runs recorded yet.",
+            "sessions": [],
+        },
+    }
+
+
+def write_and_ingest_new_projects(projects: list[dict[str, Any]], *, dry_run: bool) -> None:
+    if not projects:
+        return
+    activity = [
+        {
+            "updated_at": utc_now(),
+            "title": f"Detected {len(projects)} new project folder{'s' if len(projects) != 1 else ''}",
+            "summary": "Daily activity scan added newly active project folders for review.",
+        }
+    ]
+    payload = {"projects": projects, "recent_activity": activity}
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
+        json.dump(payload, handle, indent=2)
+        handle.write("\n")
+        temp_path = Path(handle.name)
+    try:
+        command = [str(INGEST_PATH), str(temp_path), "--mode", "merge"]
+        if dry_run:
+            command.append("--dry-run")
+        else:
+            command.append("--apply")
+        subprocess.run(command, check=True)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def api_request(path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    headers = {
+        "Host": "projects.dees-workbench.com",
+        "Content-Type": "application/json",
+    }
+    write_token = os.environ.get("PROJECT_DASHBOARD_WRITE_TOKEN", "")
+    if write_token:
+        headers["X-Project-Dashboard-Write-Token"] = write_token
+    data = None
+    method = "GET"
+    if payload is not None:
+        method = "POST"
+        headers["X-Project-Dashboard-User-Action"] = "sync-selected"
+        data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(f"{API_BASE}{path}", data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(body)
+        except json.JSONDecodeError:
+            parsed = {"ok": False, "error": body}
+        parsed["http_status"] = error.code
+        return parsed
+
+
+def sync_project(project_id: str) -> dict[str, Any]:
+    return api_request(
+        "/api/sync-selected-project",
+        {"project_id": project_id, "user_action": "sync-selected", "source": "daily-agent"},
+    )
+
+
+def guarded_sync(project_ids: list[str], *, max_syncs: int, max_wait_seconds: int, dry_run: bool) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    deadline = time.monotonic() + max_wait_seconds
+    for project_id in project_ids[:max_syncs]:
+        if dry_run:
+            results.append({"project_id": project_id, "ok": True, "dry_run": True})
+            continue
+
+        while True:
+            budget = api_request("/api/ai-budget").get("budget") or {}
+            cooldown = int(budget.get("cooldown_remaining_seconds") or 0)
+            if cooldown <= 0:
+                break
+            if time.monotonic() + cooldown + 2 > deadline:
+                results.append({"project_id": project_id, "ok": False, "error": "cooldown wait would exceed max wait"})
+                return results
+            time.sleep(cooldown + 2)
+
+        response = sync_project(project_id)
+        results.append({"project_id": project_id, **response})
+        status = response.get("http_status")
+        error = str(response.get("error") or "")
+        if status in {402, 429} or "budget" in error.lower() or "cap" in error.lower():
+            break
+    return results
+
+
+def main() -> int:
+    args = parse_args()
+    if not env_bool("PROJECT_DASHBOARD_DAILY_AGENT_ENABLED", True):
+        print("Daily agent disabled by PROJECT_DASHBOARD_DAILY_AGENT_ENABLED=false")
+        return 0
+
+    source_root = Path(args.source_root).resolve()
+    dashboard = load_dashboard()
+    projects = dashboard.get("projects", [])
+    known_paths = project_paths(projects)
+    known_ids = {project["id"] for project in projects}
+
+    since = time.time() - (args.lookback_hours * 3600)
+    files = recent_files(source_root, since, args.max_files)
+
+    touched: dict[str, float] = {}
+    new_roots: dict[Path, float] = {}
+    for path in files:
+        known = longest_known_project(path, known_paths)
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if known:
+            touched[known] = max(touched.get(known, 0), mtime)
+            continue
+        root = candidate_root(path, source_root)
+        if root and root.is_dir():
+            new_roots[root] = max(new_roots.get(root, 0), mtime)
+
+    new_projects: list[dict[str, Any]] = []
+    used_new_ids = set(known_ids)
+    for root, latest in sorted(new_roots.items(), key=lambda item: item[1], reverse=True):
+        project = new_project_payload(root, latest)
+        base_id = project["id"]
+        suffix = 2
+        while project["id"] in used_new_ids:
+            project["id"] = f"{base_id}-{suffix}"
+            suffix += 1
+        used_new_ids.add(project["id"])
+        new_projects.append(project)
+        if len(new_projects) >= args.max_new_projects:
+            break
+
+    write_and_ingest_new_projects(new_projects, dry_run=args.dry_run)
+    for project in new_projects:
+        touched[project["id"]] = time.time()
+
+    sync_ids = [
+        project_id
+        for project_id, _ in sorted(touched.items(), key=lambda item: item[1], reverse=True)
+        if project_id in used_new_ids
+    ]
+    results = guarded_sync(sync_ids, max_syncs=args.max_syncs, max_wait_seconds=args.max_wait_seconds, dry_run=args.dry_run)
+
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "dry_run": args.dry_run,
+                "lookback_hours": args.lookback_hours,
+                "recent_files": len(files),
+                "new_projects": [project["id"] for project in new_projects],
+                "sync_candidates": sync_ids,
+                "sync_results": results,
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

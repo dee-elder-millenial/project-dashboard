@@ -1,0 +1,20 @@
+{
+  "id": "project-dashboard",
+  "updated_at": "2026-06-05T12:34:00Z",
+  "next_actions": [
+    "Keep the SQLite project database current whenever project handoffs materially change.",
+    "Keep the public dashboard hostname behind Cloudflare Access.",
+    "Use the ChatGPT/Codex/Terminal resume helpers from the selected-project panel when picking work back up.",
+    "Use project-dashboard-ingest for project updates so ai_context resume metadata stays validated.",
+    "Make the dashboard service on port 8090 durable across server reboots."
+  ],
+  "tags": ["dashboard", "projects", "handoffs", "ingest"],
+  "ai_context": {
+    "last_machine": "dees-workbench",
+    "conversation_name": "Project dashboard resume launchers and AI context metadata"
+  },
+  "links": {
+    "primary": "https://projects.dees-workbench.com/",
+    "primary_label": "Open Dashboard"
+  }
+}

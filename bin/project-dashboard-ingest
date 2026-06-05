@@ -1,0 +1,1157 @@
+#!/usr/bin/env python3
+"""
+Ingest project dashboard data from a local file or forward it to a remote server.
+
+Accepted local inputs:
+- Full dashboard snapshot: {"generated_at": "...", "source_root": "...", "projects": [...], "recent_activity": [...]}
+- Project list: [{"id": "...", ...}, ...]
+- Project envelope: {"projects": [...], "recent_activity": [...]}
+- Single project object: {"id": "...", ...}
+
+Default mode is auto:
+- full dashboard snapshots replace dashboard data
+- project objects/lists merge into the existing dashboard data
+
+Write operations default to dry-run. Pass --apply to write SQLite.
+
+Other operations:
+- project-dashboard-ingest hide project-id
+- project-dashboard-ingest show project-id
+- project-dashboard-ingest delete project-id
+- project-dashboard-ingest list
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import project_store
+
+
+PROJECT_STATES = {"Active", "On Hold", "Staged", "Reference", "Complete"}
+MAX_INPUT_BYTES = 512 * 1024
+MAX_PROJECTS = 100
+MAX_RECENT_ACTIVITY = 100
+MAX_ACTIONS = 12
+MAX_BLOCKERS = 12
+MAX_TAGS = 20
+MAX_SESSIONS = 500
+MAX_STRING_LENGTHS = {
+    "id": 80,
+    "name": 120,
+    "state": 30,
+    "updated_at": 40,
+    "path": 500,
+    "resume_file": 500,
+    "summary": 500,
+    "primary_label": 80,
+    "tag": 60,
+    "action": 300,
+    "blocker": 300,
+    "activity_title": 160,
+    "activity_summary": 400,
+    "conversation_name": 180,
+    "machine": 80,
+    "notes": 600,
+}
+PROJECT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,79}$")
+DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+SECRET_PATTERNS = (
+    re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
+    re.compile(r"(?i)\\b(api[_ -]?key|secret|token|password)\\s*[:=]\\s*\\S+"),
+    re.compile(r"(?i)-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+)
+REQUIRED_PROJECT_FIELDS = {
+    "id": str,
+    "name": str,
+    "state": str,
+    "updated_at": str,
+    "path": str,
+    "resume_file": str,
+    "summary": str,
+    "next_actions": list,
+    "blockers": list,
+    "tags": list,
+    "links": dict,
+}
+
+
+def utc_now() -> str:
+    return dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def preprocess_legacy_host_arg(argv: list[str]) -> list[str]:
+    """Accept the shorthand shape the dashboard owner asked for: -dees-workbench.local."""
+    normalized: list[str] = []
+    known_short_flags = {"-h", "-n"}
+
+    for arg in argv:
+        if (
+            arg.startswith("-")
+            and not arg.startswith("--")
+            and arg not in known_short_flags
+            and len(arg) > 1
+            and any(marker in arg for marker in (".", "@"))
+        ):
+            normalized.extend(["--host", arg[1:]])
+        else:
+            normalized.append(arg)
+
+    return normalized
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="project-dashboard-ingest",
+        description="Validate and ingest project-dashboard data.",
+    )
+    parser.add_argument(
+        "command_or_source",
+        help="Input JSON file, or one of: ingest, hide, show, delete, list.",
+    )
+    parser.add_argument(
+        "items",
+        nargs="*",
+        help="For ingest: optional source when using explicit ingest. For hide/show/delete: project id(s).",
+    )
+    parser.add_argument(
+        "--host",
+        help="Optional remote host. If set, copy the file there and run the server-side ingest command over SSH.",
+    )
+    parser.add_argument(
+        "--remote-root",
+        default="/srv/cloud-mirror/project-dashboard",
+        help="Dashboard root on the remote host. Default: /srv/cloud-mirror/project-dashboard",
+    )
+    parser.add_argument(
+        "--dashboard-root",
+        default=str(repo_root()),
+        help="Dashboard root for local ingest. Default: this command's repository root.",
+    )
+    parser.add_argument(
+        "--target",
+        help="Target dashboard JSON file. Default: <dashboard-root>/data/projects.json",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("auto", "merge", "replace"),
+        default="auto",
+        help="Ingest mode. Auto replaces full snapshots and merges project updates.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        "-n",
+        action="store_true",
+        help="Validate and report what would change without writing.",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Actually write changes. Without this, write operations run as dry-run previews.",
+    )
+    parser.add_argument(
+        "--no-backup",
+        action="store_true",
+        help="Do not create a timestamped backup before writing.",
+    )
+    parser.add_argument(
+        "--pretty",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Pretty-print JSON output. Enabled by default.",
+    )
+    args = parser.parse_args(preprocess_legacy_host_arg(argv))
+    command = args.command_or_source
+
+    if command in {"ingest", "hide", "show", "delete", "list", "migrate-db"}:
+        args.operation = command
+        if command == "ingest":
+            if len(args.items) != 1:
+                parser.error("ingest requires exactly one input JSON file")
+            args.source = args.items[0]
+            args.project_ids = []
+        elif command == "migrate-db":
+            if args.items:
+                parser.error("migrate-db does not accept project ids")
+            args.source = None
+            args.project_ids = []
+        elif command == "list":
+            if args.items:
+                parser.error("list does not accept project ids")
+            args.source = None
+            args.project_ids = []
+        else:
+            if not args.items:
+                parser.error(f"{command} requires at least one project id")
+            args.source = None
+            args.project_ids = args.items
+    else:
+        args.operation = "ingest"
+        args.source = command
+        args.project_ids = []
+        if args.items:
+            parser.error("unexpected extra arguments for ingest")
+
+    if args.apply and args.dry_run:
+        parser.error("--apply and --dry-run cannot be used together")
+
+    if args.operation in {"ingest", "hide", "show", "delete", "migrate-db"} and not args.apply:
+        args.dry_run = True
+
+    return args
+
+
+def load_json(path: Path) -> Any:
+    try:
+        size = path.stat().st_size
+    except FileNotFoundError:
+        raise SystemExit(f"Input file not found: {path}") from None
+    if size > MAX_INPUT_BYTES:
+        raise SystemExit(f"Input file too large: {path} is {size} bytes, max is {MAX_INPUT_BYTES}") from None
+
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"Invalid JSON in {path}: {error}") from None
+
+
+def fail(project_id: str | None, message: str) -> None:
+    prefix = f"project {project_id}: " if project_id else ""
+    raise ValueError(prefix + message)
+
+
+def check_string(value: Any, field: str, max_length: int, *, project_id: str | None = None, allow_empty: bool = True) -> str:
+    if not isinstance(value, str):
+        fail(project_id, f"{field} must be a string")
+    if not allow_empty and not value.strip():
+        fail(project_id, f"{field} cannot be empty")
+    if len(value) > max_length:
+        fail(project_id, f"{field} is too long ({len(value)} chars, max {max_length})")
+    if "\x00" in value:
+        fail(project_id, f"{field} cannot contain null bytes")
+    return value
+
+
+def check_no_visible_secret(value: str, field: str, *, project_id: str | None = None) -> None:
+    for pattern in SECRET_PATTERNS:
+        if pattern.search(value):
+            fail(project_id, f"{field} looks like it may contain a secret")
+
+
+def validate_date(value: str, field: str, *, project_id: str | None = None, allow_empty: bool = False) -> None:
+    if not value:
+        if allow_empty:
+            return
+        fail(project_id, f"{field} cannot be empty")
+    if DATE_PATTERN.match(value):
+        try:
+            dt.date.fromisoformat(value)
+            return
+        except ValueError:
+            fail(project_id, f"{field} must be a valid date")
+    try:
+        dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        fail(project_id, f"{field} must be an ISO date or timestamp")
+
+
+def validate_project_path(value: str, field: str, *, project_id: str) -> None:
+    if ".." in Path(value.replace("\\", "/")).parts:
+        fail(project_id, f"{field} cannot contain path traversal")
+    allowed_prefixes = [
+        prefix.strip()
+        for prefix in os.environ.get("PROJECT_DASHBOARD_ALLOWED_PATH_PREFIXES", "").split(os.pathsep)
+        if prefix.strip()
+    ]
+    if allowed_prefixes and not any(value.startswith(prefix) for prefix in allowed_prefixes):
+        fail(project_id, f"{field} must be under one of PROJECT_DASHBOARD_ALLOWED_PATH_PREFIXES")
+
+
+def validate_link(value: str, field: str, *, project_id: str) -> None:
+    if value == "#":
+        return
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        fail(project_id, f"{field} must be # or an http(s) URL")
+
+
+def check_limited_string_list(
+    project: dict[str, Any],
+    key: str,
+    *,
+    max_items: int,
+    max_item_length: int,
+    item_label: str,
+) -> None:
+    project_id = project.get("id", "<unknown>")
+    value = project.get(key)
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise ValueError(f"project {project_id}: {key} must be a list of strings")
+    if len(value) > max_items:
+        raise ValueError(f"project {project_id}: {key} has too many items ({len(value)}, max {max_items})")
+    for index, item in enumerate(value):
+        check_string(item, f"{key}[{index}]", max_item_length, project_id=project_id)
+        check_no_visible_secret(item, item_label, project_id=project_id)
+
+
+def require_string_list(project: dict[str, Any], key: str) -> None:
+    value = project.get(key)
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise ValueError(f"project {project.get('id', '<unknown>')}: {key} must be a list of strings")
+
+
+def validate_ai_context(project: dict[str, Any]) -> None:
+    context = project.get("ai_context")
+    if context is None:
+        return
+
+    if not isinstance(context, dict):
+        raise ValueError(f"project {project['id']}: ai_context must be an object")
+
+    for key in ("last_machine", "conversation_name"):
+        if key in context and not isinstance(context[key], str):
+            raise ValueError(f"project {project['id']}: ai_context.{key} must be a string")
+        if key in context:
+            check_string(
+                context[key],
+                f"ai_context.{key}",
+                MAX_STRING_LENGTHS["machine" if key == "last_machine" else "conversation_name"],
+                project_id=project["id"],
+            )
+
+
+def validate_time_tracking(project: dict[str, Any]) -> None:
+    tracking = project.get("time_tracking")
+    if tracking is None:
+        return
+
+    if not isinstance(tracking, dict):
+        raise ValueError(f"project {project['id']}: time_tracking must be an object")
+
+    if "approx_minutes_total" in tracking:
+        value = tracking["approx_minutes_total"]
+        if not isinstance(value, int) or value < 0:
+            raise ValueError(f"project {project['id']}: time_tracking.approx_minutes_total must be a non-negative integer")
+
+    if "confidence" in tracking and tracking["confidence"] not in {"low", "medium", "high"}:
+        raise ValueError(f"project {project['id']}: time_tracking.confidence must be low, medium, or high")
+
+    if "notes" in tracking and not isinstance(tracking["notes"], str):
+        raise ValueError(f"project {project['id']}: time_tracking.notes must be a string")
+    if "notes" in tracking:
+        check_string(tracking["notes"], "time_tracking.notes", MAX_STRING_LENGTHS["notes"], project_id=project["id"])
+        check_no_visible_secret(tracking["notes"], "time_tracking.notes", project_id=project["id"])
+
+    sessions = tracking.get("sessions", [])
+    if not isinstance(sessions, list):
+        raise ValueError(f"project {project['id']}: time_tracking.sessions must be a list")
+    if len(sessions) > MAX_SESSIONS:
+        raise ValueError(f"project {project['id']}: time_tracking.sessions has too many items ({len(sessions)}, max {MAX_SESSIONS})")
+
+    for index, session in enumerate(sessions):
+        if not isinstance(session, dict):
+            raise ValueError(f"project {project['id']}: time_tracking.sessions[{index}] must be an object")
+
+        for key in ("date", "machine", "conversation_name", "summary"):
+            if key in session and not isinstance(session[key], str):
+                raise ValueError(f"project {project['id']}: time_tracking.sessions[{index}].{key} must be a string")
+            if key in session:
+                max_length = MAX_STRING_LENGTHS.get(key, MAX_STRING_LENGTHS["summary"])
+                check_string(
+                    session[key],
+                    f"time_tracking.sessions[{index}].{key}",
+                    max_length,
+                    project_id=project["id"],
+                    allow_empty=key != "date",
+                )
+                if key == "date":
+                    validate_date(session[key], f"time_tracking.sessions[{index}].date", project_id=project["id"])
+                else:
+                    check_no_visible_secret(session[key], f"time_tracking.sessions[{index}].{key}", project_id=project["id"])
+
+        value = session.get("approx_minutes")
+        if value is not None and (not isinstance(value, int) or value < 0):
+            raise ValueError(
+                f"project {project['id']}: time_tracking.sessions[{index}].approx_minutes must be a non-negative integer"
+            )
+
+
+def validate_ai_spend(project: dict[str, Any]) -> None:
+    spend = project.get("ai_spend")
+    if spend is None:
+        return
+
+    if not isinstance(spend, dict):
+        raise ValueError(f"project {project['id']}: ai_spend must be an object")
+
+    for key in ("estimated_usd_total", "last_sync_estimated_usd"):
+        if key in spend:
+            value = spend[key]
+            if not isinstance(value, (int, float)) or value < 0:
+                raise ValueError(f"project {project['id']}: ai_spend.{key} must be a non-negative number")
+
+    if "currency" in spend and not isinstance(spend["currency"], str):
+        raise ValueError(f"project {project['id']}: ai_spend.currency must be a string")
+    if "currency" in spend and spend["currency"] != "USD":
+        raise ValueError(f"project {project['id']}: ai_spend.currency must be USD")
+
+    if "notes" in spend and not isinstance(spend["notes"], str):
+        raise ValueError(f"project {project['id']}: ai_spend.notes must be a string")
+    if "notes" in spend:
+        check_string(spend["notes"], "ai_spend.notes", MAX_STRING_LENGTHS["notes"], project_id=project["id"])
+        check_no_visible_secret(spend["notes"], "ai_spend.notes", project_id=project["id"])
+
+    sessions = spend.get("sessions", [])
+    if not isinstance(sessions, list):
+        raise ValueError(f"project {project['id']}: ai_spend.sessions must be a list")
+    if len(sessions) > MAX_SESSIONS:
+        raise ValueError(f"project {project['id']}: ai_spend.sessions has too many items ({len(sessions)}, max {MAX_SESSIONS})")
+
+    for index, session in enumerate(sessions):
+        if not isinstance(session, dict):
+            raise ValueError(f"project {project['id']}: ai_spend.sessions[{index}] must be an object")
+
+        for key in ("date", "machine", "conversation_name", "model", "summary"):
+            if key in session and not isinstance(session[key], str):
+                raise ValueError(f"project {project['id']}: ai_spend.sessions[{index}].{key} must be a string")
+            if key in session:
+                max_length = MAX_STRING_LENGTHS.get(key, MAX_STRING_LENGTHS["summary"])
+                check_string(
+                    session[key],
+                    f"ai_spend.sessions[{index}].{key}",
+                    max_length,
+                    project_id=project["id"],
+                    allow_empty=key != "date",
+                )
+                if key == "date":
+                    validate_date(session[key], f"ai_spend.sessions[{index}].date", project_id=project["id"])
+                else:
+                    check_no_visible_secret(session[key], f"ai_spend.sessions[{index}].{key}", project_id=project["id"])
+
+        for key in ("input_tokens", "output_tokens"):
+            value = session.get(key)
+            if value is not None and (not isinstance(value, int) or value < 0):
+                raise ValueError(f"project {project['id']}: ai_spend.sessions[{index}].{key} must be a non-negative integer")
+
+        value = session.get("estimated_usd")
+        if value is not None and (not isinstance(value, (int, float)) or value < 0):
+            raise ValueError(f"project {project['id']}: ai_spend.sessions[{index}].estimated_usd must be a non-negative number")
+
+
+def normalize_project(project: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(project)
+    normalized.setdefault("updated_at", utc_now())
+    normalized.setdefault("next_actions", [])
+    normalized.setdefault("blockers", [])
+    normalized.setdefault("tags", [])
+    normalized.setdefault("links", {"primary": "#", "primary_label": "View Handoff"})
+    normalized["links"].setdefault("primary", "#")
+    normalized["links"].setdefault("primary_label", "Open")
+    return normalized
+
+
+def validate_project(project: dict[str, Any], *, allow_partial: bool = False) -> None:
+    if not isinstance(project, dict):
+        raise ValueError("project entries must be objects")
+
+    if not isinstance(project.get("id"), str) or not project.get("id"):
+        raise ValueError("project id is required")
+    project_id = check_string(project["id"], "id", MAX_STRING_LENGTHS["id"], allow_empty=False)
+    if not PROJECT_ID_PATTERN.match(project_id):
+        raise ValueError(f"project {project_id}: id must use lowercase letters, numbers, underscores, or hyphens")
+
+    if allow_partial:
+        fields = {key: value for key, value in REQUIRED_PROJECT_FIELDS.items() if key in project}
+    else:
+        missing = [key for key in REQUIRED_PROJECT_FIELDS if key not in project]
+        if missing:
+            raise ValueError(f"project {project['id']}: missing required fields: {', '.join(missing)}")
+        fields = REQUIRED_PROJECT_FIELDS
+
+    for key, expected_type in fields.items():
+        if not isinstance(project.get(key), expected_type):
+            raise ValueError(f"project {project['id']}: {key} must be {expected_type.__name__}")
+
+    if "state" in project and project["state"] not in PROJECT_STATES:
+        allowed = ", ".join(sorted(PROJECT_STATES))
+        raise ValueError(f"project {project['id']}: state must be one of {allowed}")
+
+    for key in ("name", "state", "updated_at", "path", "resume_file", "summary"):
+        if key in project:
+            check_string(project[key], key, MAX_STRING_LENGTHS[key], project_id=project_id, allow_empty=False)
+            if key in {"name", "summary"}:
+                check_no_visible_secret(project[key], key, project_id=project_id)
+
+    if "updated_at" in project:
+        validate_date(project["updated_at"], "updated_at", project_id=project_id)
+
+    for key in ("path", "resume_file"):
+        if key in project:
+            validate_project_path(project[key], key, project_id=project_id)
+
+    for key in ("next_actions", "blockers", "tags"):
+        if key in project:
+            if key == "next_actions":
+                check_limited_string_list(
+                    project,
+                    key,
+                    max_items=MAX_ACTIONS,
+                    max_item_length=MAX_STRING_LENGTHS["action"],
+                    item_label="next action",
+                )
+            elif key == "blockers":
+                check_limited_string_list(
+                    project,
+                    key,
+                    max_items=MAX_BLOCKERS,
+                    max_item_length=MAX_STRING_LENGTHS["blocker"],
+                    item_label="blocker",
+                )
+            else:
+                check_limited_string_list(
+                    project,
+                    key,
+                    max_items=MAX_TAGS,
+                    max_item_length=MAX_STRING_LENGTHS["tag"],
+                    item_label="tag",
+                )
+
+    if "links" in project:
+        links = project["links"]
+        if not isinstance(links.get("primary"), str) or not isinstance(links.get("primary_label"), str):
+            raise ValueError(f"project {project['id']}: links.primary and links.primary_label must be strings")
+        check_string(links["primary"], "links.primary", 500, project_id=project_id, allow_empty=False)
+        check_string(links["primary_label"], "links.primary_label", MAX_STRING_LENGTHS["primary_label"], project_id=project_id)
+        validate_link(links["primary"], "links.primary", project_id=project_id)
+        check_no_visible_secret(links["primary_label"], "links.primary_label", project_id=project_id)
+
+    if "hidden" in project and not isinstance(project["hidden"], bool):
+        raise ValueError(f"project {project['id']}: hidden must be bool")
+
+    validate_ai_context(project)
+    validate_time_tracking(project)
+    validate_ai_spend(project)
+
+
+def validate_activity(items: Any) -> None:
+    if not isinstance(items, list):
+        raise ValueError("recent_activity must be a list")
+    if len(items) > MAX_RECENT_ACTIVITY:
+        raise ValueError(f"recent_activity has too many items ({len(items)}, max {MAX_RECENT_ACTIVITY})")
+
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValueError(f"recent_activity[{index}] must be an object")
+        for key in ("updated_at", "title", "summary"):
+            if not isinstance(item.get(key), str):
+                raise ValueError(f"recent_activity[{index}].{key} must be a string")
+        validate_date(item["updated_at"], f"recent_activity[{index}].updated_at")
+        check_string(item["title"], f"recent_activity[{index}].title", MAX_STRING_LENGTHS["activity_title"], allow_empty=False)
+        check_string(item["summary"], f"recent_activity[{index}].summary", MAX_STRING_LENGTHS["activity_summary"], allow_empty=False)
+        check_no_visible_secret(item["title"], f"recent_activity[{index}].title")
+        check_no_visible_secret(item["summary"], f"recent_activity[{index}].summary")
+
+
+def validate_dashboard(data: dict[str, Any]) -> None:
+    if not isinstance(data, dict):
+        raise ValueError("dashboard data must be an object")
+
+    for key in ("generated_at", "source_root"):
+        if not isinstance(data.get(key), str):
+            raise ValueError(f"{key} must be a string")
+
+    projects = data.get("projects")
+    if not isinstance(projects, list):
+        raise ValueError("projects must be a list")
+    if len(projects) > MAX_PROJECTS:
+        raise ValueError(f"projects has too many items ({len(projects)}, max {MAX_PROJECTS})")
+
+    check_string(data["generated_at"], "generated_at", 40, allow_empty=False)
+    validate_date(data["generated_at"], "generated_at")
+    check_string(data["source_root"], "source_root", 500)
+    if data["source_root"]:
+        validate_project_path(data["source_root"], "source_root", project_id="dashboard")
+
+    seen: set[str] = set()
+    for project in projects:
+        validate_project(project)
+        project_id = project["id"]
+        if project_id in seen:
+            raise ValueError(f"duplicate project id: {project_id}")
+        seen.add(project_id)
+
+    validate_activity(data.get("recent_activity", []))
+
+
+def classify_input(payload: Any, mode: str) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any] | None]:
+    if isinstance(payload, list):
+        projects = payload
+        replace_data = None
+        recent_activity: list[dict[str, Any]] = []
+        inferred_mode = "merge"
+    elif isinstance(payload, dict) and "projects" in payload:
+        projects = payload["projects"]
+        recent_activity = payload.get("recent_activity", [])
+        looks_like_snapshot = "generated_at" in payload or "source_root" in payload
+        inferred_mode = "replace" if looks_like_snapshot else "merge"
+        replace_data = payload if looks_like_snapshot else None
+    elif isinstance(payload, dict) and "id" in payload:
+        projects = [payload]
+        replace_data = None
+        recent_activity = []
+        inferred_mode = "merge"
+    else:
+        raise ValueError("input must be a dashboard snapshot, project envelope, project list, or single project object")
+
+    if not isinstance(projects, list):
+        raise ValueError("projects must be a list")
+
+    selected_mode = inferred_mode if mode == "auto" else mode
+
+    if selected_mode == "replace":
+        if replace_data is None:
+            replace_data = {
+                "generated_at": utc_now(),
+                "source_root": "",
+                "projects": projects,
+                "recent_activity": recent_activity,
+            }
+        replace_data.setdefault("generated_at", utc_now())
+        replace_data.setdefault("source_root", "")
+        replace_data.setdefault("recent_activity", recent_activity)
+        validate_dashboard(replace_data)
+    else:
+        for project in projects:
+            validate_project(project, allow_partial=True)
+        validate_activity(recent_activity)
+
+    return selected_mode, projects, recent_activity, replace_data
+
+
+def merge_dashboard(
+    existing: dict[str, Any],
+    projects: list[dict[str, Any]],
+    recent_activity: list[dict[str, Any]],
+) -> tuple[dict[str, Any], int, int]:
+    validate_dashboard(existing)
+    by_id = {project["id"]: dict(project) for project in existing["projects"]}
+    order = [project["id"] for project in existing["projects"]]
+    added = 0
+    updated = 0
+
+    for incoming in projects:
+        project_id = incoming["id"]
+        if project_id in by_id:
+            merged = dict(by_id[project_id])
+            merged.update(incoming)
+            merged["links"] = {**by_id[project_id].get("links", {}), **incoming.get("links", {})}
+            by_id[project_id] = normalize_project(merged)
+            updated += 1
+        else:
+            normalized = normalize_project(incoming)
+            validate_project(normalized)
+            by_id[project_id] = normalized
+            order.append(project_id)
+            added += 1
+
+        validate_project(by_id[project_id])
+
+    output = dict(existing)
+    output["generated_at"] = utc_now()
+    output["projects"] = [by_id[project_id] for project_id in order]
+
+    if recent_activity:
+        output["recent_activity"] = recent_activity + existing.get("recent_activity", [])
+
+    validate_dashboard(output)
+    return output, added, updated
+
+
+def write_json(path: Path, data: dict[str, Any], *, pretty: bool) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as handle:
+        temp_path = Path(handle.name)
+        if pretty:
+            json.dump(data, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+        else:
+            json.dump(data, handle, separators=(",", ":"), ensure_ascii=False)
+            handle.write("\n")
+
+    os.replace(temp_path, path)
+
+
+def backup_file(path: Path) -> Path:
+    backup_dir = path.parent / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / f"{path.stem}.{project_store.file_timestamp()}{path.suffix}"
+    shutil.copy2(path, backup_path)
+    return backup_path
+
+
+def audit_log_path(args: argparse.Namespace) -> Path:
+    return Path(args.dashboard_root).resolve() / "data" / "ingest-audit.jsonl"
+
+
+def actor_name() -> str:
+    return os.environ.get("USER") or os.environ.get("USERNAME") or "unknown"
+
+
+def write_audit(args: argparse.Namespace, entry: dict[str, Any]) -> None:
+    dashboard_root = Path(args.dashboard_root).resolve()
+    db_path = project_store.default_db_path(dashboard_root)
+    payload = {
+        "created_at": utc_now(),
+        "actor": actor_name(),
+        "operation": getattr(args, "operation", ""),
+        "mode": getattr(args, "mode", ""),
+        "source": str(getattr(args, "source", "") or ""),
+        "target": str(target_path(args)),
+        "dry_run": bool(getattr(args, "dry_run", False)),
+        "applied": bool(getattr(args, "apply", False)),
+        "success": False,
+        "project_count": 0,
+        "added": 0,
+        "updated": 0,
+        "changed": 0,
+        "backup_path": "",
+        "database_backup_path": "",
+        "error": "",
+        "details": {},
+        **entry,
+    }
+
+    jsonl_path = audit_log_path(args)
+    jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+    with jsonl_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+        handle.write("\n")
+
+    try:
+        project_store.log_ingest_audit(db_path, payload)
+    except Exception:
+        # Keep CLI audit best-effort: the JSONL entry above is the durable fallback.
+        pass
+
+
+def target_path(args: argparse.Namespace) -> Path:
+    dashboard_root = Path(args.dashboard_root).resolve()
+    return Path(args.target).resolve() if args.target else dashboard_root / "data" / "projects.json"
+
+
+def load_dashboard_target(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
+    target = target_path(args)
+    dashboard_root = Path(args.dashboard_root).resolve()
+    dashboard = project_store.load_dashboard(dashboard_root, target)
+    return target, dashboard
+
+
+def persist_dashboard(args: argparse.Namespace, target: Path, output: dict[str, Any]) -> dict[str, str]:
+    dashboard_root = Path(args.dashboard_root).resolve()
+    db_path = project_store.default_db_path(dashboard_root)
+    backup_path = None
+    database_backup_path = None
+    backup_root = target.parent / "backups"
+    if not args.no_backup:
+        if target.exists():
+            backup_path = backup_file(target)
+        database_backup_path = project_store.backup_database(db_path, backup_root)
+
+    try:
+        project_store.replace_dashboard(db_path, output)
+        project_store.verify_dashboard_database(db_path, len(output.get("projects", [])))
+        loaded = project_store.load_dashboard_from_db_required(db_path)
+        validate_dashboard(loaded)
+        project_store.write_fallback_sentinel(target, db_path)
+    except Exception as error:
+        restored = False
+        if database_backup_path:
+            project_store.restore_database(database_backup_path, db_path)
+            restored = True
+        if backup_path:
+            shutil.copy2(backup_path, target)
+        raise RuntimeError(
+            f"write verification failed; rollback {'completed' if restored else 'not available'}: {error}"
+        ) from error
+
+    return {
+        "backup_path": str(backup_path) if backup_path else "",
+        "database_backup_path": str(database_backup_path) if database_backup_path else "",
+    }
+
+
+def run_remote_ingest(args: argparse.Namespace, source: Path | None) -> int:
+    if args.operation != "ingest":
+        remote_cmd = [
+            f"{args.remote_root}/bin/project-dashboard-ingest",
+            args.operation,
+            *args.project_ids,
+            "--dashboard-root",
+            args.remote_root,
+        ]
+        if args.dry_run:
+            remote_cmd.append("--dry-run")
+        if args.apply:
+            remote_cmd.append("--apply")
+        if args.no_backup:
+            remote_cmd.append("--no-backup")
+        if not args.pretty:
+            remote_cmd.append("--no-pretty")
+
+        command = " ".join(shlex_quote(part) for part in remote_cmd)
+        if args.dry_run:
+            print(f"Remote dry run OK: would run ssh {args.host} {command}")
+            return 0
+
+        print(f"Running remote {args.operation} on {args.host}")
+        subprocess.run(["ssh", args.host, command], check=True)
+        return 0
+
+    assert source is not None
+    remote_name = f"project-dashboard-ingest-{utc_now().replace(':', '').replace('-', '')}-{source.name}"
+    remote_tmp = f"/tmp/{remote_name}"
+    scp_target = f"{args.host}:{remote_tmp}"
+
+    remote_cmd = [
+        f"{args.remote_root}/bin/project-dashboard-ingest",
+        remote_tmp,
+        "--dashboard-root",
+        args.remote_root,
+    ]
+
+    if args.mode != "auto":
+        remote_cmd.extend(["--mode", args.mode])
+    if args.dry_run:
+        remote_cmd.append("--dry-run")
+    if args.apply:
+        remote_cmd.append("--apply")
+    if args.no_backup:
+        remote_cmd.append("--no-backup")
+    if not args.pretty:
+        remote_cmd.append("--no-pretty")
+
+    command = " ".join(shlex_quote(part) for part in remote_cmd)
+
+    if args.dry_run:
+        print(f"Remote dry run OK: would copy {source} to {scp_target}")
+        print(f"Remote dry run OK: would run ssh {args.host} {command}")
+        return 0
+
+    print(f"Copying {source} to {scp_target}")
+    subprocess.run(["scp", str(source), scp_target], check=True)
+
+    print(f"Running remote ingest on {args.host}")
+    subprocess.run(["ssh", args.host, command], check=True)
+    return 0
+
+
+def shlex_quote(value: str) -> str:
+    import shlex
+
+    return shlex.quote(value)
+
+
+def local_ingest(args: argparse.Namespace, source: Path) -> int:
+    try:
+        target, existing = load_dashboard_target(args)
+        payload = load_json(source)
+        mode, projects, recent_activity, replacement = classify_input(payload, args.mode)
+    except ValueError as error:
+        write_audit(args, {"error": f"Invalid ingest input: {error}"})
+        raise SystemExit(f"Invalid ingest input: {error}") from None
+    except SystemExit as error:
+        write_audit(args, {"error": str(error)})
+        raise
+
+    if mode == "replace":
+        assert replacement is not None
+        output = replacement
+        output["generated_at"] = utc_now()
+        added = len(output["projects"])
+        updated = 0
+    else:
+        try:
+            output, added, updated = merge_dashboard(existing, projects, recent_activity)
+        except ValueError as error:
+            write_audit(args, {"mode": mode, "error": f"Could not merge ingest input: {error}"})
+            raise SystemExit(f"Could not merge ingest input: {error}") from None
+
+    if args.dry_run:
+        write_audit(
+            args,
+            {
+                "mode": mode,
+                "success": True,
+                "project_count": len(output["projects"]),
+                "added": added,
+                "updated": updated,
+                "details": {"recent_activity": len(recent_activity)},
+            },
+        )
+        print(f"Dry run OK: mode={mode}, target={target}, added={added}, updated={updated}")
+        return 0
+
+    try:
+        backups = persist_dashboard(args, target, output)
+    except Exception as error:
+        write_audit(
+            args,
+            {
+                "mode": mode,
+                "project_count": len(output["projects"]),
+                "added": added,
+                "updated": updated,
+                "error": str(error),
+            },
+        )
+        raise SystemExit(str(error)) from None
+
+    write_audit(
+        args,
+        {
+            "mode": mode,
+            "success": True,
+            "project_count": len(output["projects"]),
+            "added": added,
+            "updated": updated,
+            "backup_path": backups["backup_path"],
+            "database_backup_path": backups["database_backup_path"],
+            "details": {"recent_activity": len(recent_activity)},
+        },
+    )
+    print(f"Ingested {source} -> {target}")
+    print(f"mode={mode}, added={added}, updated={updated}, projects={len(output['projects'])}")
+    if backups["backup_path"]:
+        print(f"backup={backups['backup_path']}")
+    if backups["database_backup_path"]:
+        print(f"database_backup={backups['database_backup_path']}")
+    print(f"database={project_store.default_db_path(Path(args.dashboard_root).resolve())}")
+    return 0
+
+
+def project_table(projects: list[dict[str, Any]]) -> str:
+    headers = ("ID", "Name", "State", "Visibility", "Updated")
+    rows = [
+        (
+            project["id"],
+            project["name"],
+            project["state"],
+            "hidden" if project.get("hidden") else "visible",
+            project["updated_at"],
+        )
+        for project in projects
+    ]
+    widths = [
+        max(len(headers[index]), *(len(row[index]) for row in rows)) if rows else len(headers[index])
+        for index in range(len(headers))
+    ]
+    lines = [
+        "  ".join(headers[index].ljust(widths[index]) for index in range(len(headers))),
+        "  ".join("-" * width for width in widths),
+    ]
+    lines.extend("  ".join(row[index].ljust(widths[index]) for index in range(len(headers))) for row in rows)
+    return "\n".join(lines)
+
+
+def local_list(args: argparse.Namespace) -> int:
+    target, dashboard = load_dashboard_target(args)
+
+    try:
+        validate_dashboard(dashboard)
+    except ValueError as error:
+        raise SystemExit(f"Invalid target dashboard data: {error}") from None
+
+    projects = sorted(dashboard["projects"], key=lambda project: project["name"].lower())
+    print(f"target={target}")
+    print(f"projects={len(projects)}")
+    print(project_table(projects))
+    return 0
+
+
+def local_visibility_or_delete(args: argparse.Namespace) -> int:
+    try:
+        target, dashboard = load_dashboard_target(args)
+        validate_dashboard(dashboard)
+    except ValueError as error:
+        write_audit(args, {"error": f"Invalid target dashboard data: {error}"})
+        raise SystemExit(f"Invalid target dashboard data: {error}") from None
+    except SystemExit as error:
+        write_audit(args, {"error": str(error)})
+        raise
+
+    requested = list(dict.fromkeys(args.project_ids))
+    requested_set = set(requested)
+    projects = dashboard["projects"]
+    existing_ids = {project["id"] for project in projects}
+    missing = [project_id for project_id in requested if project_id not in existing_ids]
+
+    if missing:
+        write_audit(args, {"error": f"Project id not found: {', '.join(missing)}"})
+        raise SystemExit(f"Project id not found: {', '.join(missing)}")
+
+    if args.operation in {"hide", "show"}:
+        changed = 0
+        hidden_value = args.operation == "hide"
+        output_projects = []
+        for project in projects:
+            if project["id"] in requested_set:
+                updated = dict(project)
+                if updated.get("hidden", False) != hidden_value:
+                    changed += 1
+                updated["hidden"] = hidden_value
+                updated["updated_at"] = utc_now()
+                output_projects.append(updated)
+            else:
+                output_projects.append(project)
+        output = dict(dashboard)
+        output["projects"] = output_projects
+    else:
+        changed = len(requested)
+        output = dict(dashboard)
+        output["projects"] = [project for project in projects if project["id"] not in requested_set]
+
+    output["generated_at"] = utc_now()
+    validate_dashboard(output)
+
+    if args.dry_run:
+        write_audit(
+            args,
+            {
+                "success": True,
+                "project_count": len(output["projects"]),
+                "changed": changed,
+                "details": {"requested": requested},
+            },
+        )
+        print(
+            f"Dry run OK: operation={args.operation}, target={target}, "
+            f"matched={len(requested)}, changed={changed}, projects={len(output['projects'])}"
+        )
+        return 0
+
+    try:
+        backups = persist_dashboard(args, target, output)
+    except Exception as error:
+        write_audit(
+            args,
+            {
+                "project_count": len(output["projects"]),
+                "changed": changed,
+                "error": str(error),
+                "details": {"requested": requested},
+            },
+        )
+        raise SystemExit(str(error)) from None
+
+    write_audit(
+        args,
+        {
+            "success": True,
+            "project_count": len(output["projects"]),
+            "changed": changed,
+            "backup_path": backups["backup_path"],
+            "database_backup_path": backups["database_backup_path"],
+            "details": {"requested": requested},
+        },
+    )
+    print(f"{args.operation.capitalize()} complete: {', '.join(requested)}")
+    print(f"target={target}, changed={changed}, projects={len(output['projects'])}")
+    if backups["backup_path"]:
+        print(f"backup={backups['backup_path']}")
+    if backups["database_backup_path"]:
+        print(f"database_backup={backups['database_backup_path']}")
+    print(f"database={project_store.default_db_path(Path(args.dashboard_root).resolve())}")
+    return 0
+
+
+def local_migrate_db(args: argparse.Namespace) -> int:
+    try:
+        target, dashboard = load_dashboard_target(args)
+        validate_dashboard(dashboard)
+    except ValueError as error:
+        write_audit(args, {"error": f"Invalid target dashboard data: {error}"})
+        raise SystemExit(f"Invalid target dashboard data: {error}") from None
+    except SystemExit as error:
+        write_audit(args, {"error": str(error)})
+        raise
+
+    if args.dry_run:
+        write_audit(
+            args,
+            {
+                "success": True,
+                "project_count": len(dashboard["projects"]),
+                "details": {"database": str(project_store.default_db_path(Path(args.dashboard_root).resolve()))},
+            },
+        )
+        print(
+            f"Dry run OK: operation=migrate-db, target={target}, "
+            f"database={project_store.default_db_path(Path(args.dashboard_root).resolve())}, "
+            f"projects={len(dashboard['projects'])}"
+        )
+        return 0
+
+    try:
+        backups = persist_dashboard(args, target, dashboard)
+    except Exception as error:
+        write_audit(args, {"project_count": len(dashboard["projects"]), "error": str(error)})
+        raise SystemExit(str(error)) from None
+
+    write_audit(
+        args,
+        {
+            "success": True,
+            "project_count": len(dashboard["projects"]),
+            "backup_path": backups["backup_path"],
+            "database_backup_path": backups["database_backup_path"],
+        },
+    )
+    print(f"Migration complete: {target}")
+    print(f"database={project_store.default_db_path(Path(args.dashboard_root).resolve())}")
+    print(f"projects={len(dashboard['projects'])}")
+    if backups["backup_path"]:
+        print(f"backup={backups['backup_path']}")
+    if backups["database_backup_path"]:
+        print(f"database_backup={backups['database_backup_path']}")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    args = parse_args(argv)
+    source = Path(args.source).expanduser().resolve() if args.source else None
+
+    if args.host:
+        return run_remote_ingest(args, source)
+
+    if args.operation == "ingest":
+        assert source is not None
+        return local_ingest(args, source)
+
+    if args.operation == "list":
+        return local_list(args)
+
+    if args.operation == "migrate-db":
+        return local_migrate_db(args)
+
+    return local_visibility_or_delete(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

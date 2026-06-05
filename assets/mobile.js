@@ -24,10 +24,8 @@ function text(id, value) {
 
 function formatDate(value) {
   if (!value) return "Unknown";
-
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Unknown";
-
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
@@ -38,12 +36,10 @@ function formatDate(value) {
 
 function formatDayLabel(value) {
   if (!value) return "Unknown";
-
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return "Unknown";
-
   return new Intl.DateTimeFormat(undefined, {
-    weekday: "long",
+    weekday: "short",
     month: "short",
     day: "numeric",
   }).format(date);
@@ -54,7 +50,6 @@ function dateKey(value) {
   const raw = String(value);
   const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
   if (match) return match[1];
-
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return "";
   return date.toISOString().slice(0, 10);
@@ -65,18 +60,19 @@ function monthKeyFromDate(date) {
 }
 
 function dateFromMonthKey(monthKey) {
+  const now = new Date();
   const [year, month] = String(monthKey || "").split("-").map(Number);
-  const date = new Date(year || new Date().getFullYear(), (month || new Date().getMonth() + 1) - 1, 1);
-  return Number.isNaN(date.getTime()) ? new Date() : date;
+  const date = new Date(year || now.getFullYear(), (month || now.getMonth() + 1) - 1, 1);
+  return Number.isNaN(date.getTime()) ? now : date;
 }
 
 function formatDuration(minutes) {
   const value = Number(minutes) || 0;
-  if (value < 60) return `${value}m`;
+  if (value < 60) return `${value}m tracked`;
 
   const hours = Math.floor(value / 60);
   const remaining = value % 60;
-  return remaining ? `${hours}h ${remaining}m` : `${hours}h`;
+  return `${remaining ? `${hours}h ${remaining}m` : `${hours}h`} tracked`;
 }
 
 function formatMoney(value) {
@@ -91,6 +87,10 @@ function formatMoney(value) {
 
 function colorClass(state, prefix) {
   return `${prefix}-${state.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+}
+
+function dashboardProjects() {
+  return dashboard.data.projects.filter((project) => !project.hidden);
 }
 
 function searchText(project) {
@@ -135,61 +135,41 @@ function searchText(project) {
     .toLowerCase();
 }
 
-function dashboardProjects() {
-  return dashboard.data.projects.filter((project) => !project.hidden);
-}
-
 function dateValue(project, fields) {
   const value = fields.map((field) => project[field]).find(Boolean);
   if (!value) return 0;
-
   const timestamp = new Date(value).getTime();
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 function sortValue(project) {
-  if (dashboard.sortKey === "alpha") {
-    return project.name.toLocaleLowerCase();
-  }
-
+  if (dashboard.sortKey === "alpha") return project.name.toLocaleLowerCase();
   if (dashboard.sortKey === "startDate") {
     return dateValue(project, ["started_at", "start_date", "created_at", "updated_at"]);
   }
-
   return dateValue(project, ["last_active_at", "last_active", "updated_at"]);
-}
-
-function sortedProjects(projects) {
-  const direction = dashboard.sortDirection === "asc" ? 1 : -1;
-
-  return [...projects].sort((a, b) => {
-    const aValue = sortValue(a);
-    const bValue = sortValue(b);
-    let comparison = 0;
-
-    if (typeof aValue === "string" && typeof bValue === "string") {
-      comparison = aValue.localeCompare(bValue);
-    } else {
-      comparison = aValue - bValue;
-    }
-
-    if (comparison === 0) {
-      comparison = a.name.localeCompare(b.name);
-    }
-
-    return comparison * direction;
-  });
 }
 
 function visibleProjects() {
   const query = dashboard.query.trim().toLowerCase();
+  const direction = dashboard.sortDirection === "asc" ? 1 : -1;
   const projects = dashboardProjects().filter((project) => {
     const stateMatches = !stateList.includes(project.state) || dashboard.visibleStates.has(project.state);
     const queryMatches = !query || searchText(project).includes(query);
     return stateMatches && queryMatches;
   });
 
-  return sortedProjects(projects);
+  return projects.sort((a, b) => {
+    const aValue = sortValue(a);
+    const bValue = sortValue(b);
+    let comparison = 0;
+    if (typeof aValue === "string" && typeof bValue === "string") {
+      comparison = aValue.localeCompare(bValue);
+    } else {
+      comparison = aValue - bValue;
+    }
+    return (comparison || a.name.localeCompare(b.name)) * direction;
+  });
 }
 
 function workSessions(projects = dashboardProjects()) {
@@ -218,9 +198,9 @@ function renderOverview() {
   const projects = dashboardProjects();
   text("projectCount", projects.length.toLocaleString());
   text("activeCount", projects.filter((project) => project.state === "Active").length.toLocaleString());
-  text("blockedCount", projects.filter((project) => project.blockers.length > 0).length.toLocaleString());
+  text("blockedCount", projects.filter((project) => (project.blockers || []).length > 0).length.toLocaleString());
   text("updatedAt", formatDate(dashboard.data.generated_at));
-  text("dashboardStatus", `Tracking ${projects.length} projects from ${dashboard.data.source_root}`);
+  text("mobileStatus", `${projects.length} projects from ${dashboard.data.source_root}`);
   renderBudget();
 }
 
@@ -245,25 +225,6 @@ function renderBudget() {
 
   text("aiSpendTotal", formatMoney(total));
   text("aiBudgetStatus", [budgetText, dailyText, guardText, apiText].filter(Boolean).join(" · "));
-}
-
-function renderBars() {
-  const rows = document.getElementById("stateBars");
-  const projects = dashboardProjects();
-  const total = projects.length || 1;
-  rows.innerHTML = "";
-
-  stateList.forEach((state) => {
-    const count = projects.filter((project) => project.state === state).length;
-    const row = document.createElement("div");
-    row.className = "state-bar";
-    row.innerHTML = `
-      <span>${state}</span>
-      <span class="bar-track"><span class="bar-fill ${colorClass(state, "fill")}" style="width: ${(count / total) * 100}%"></span></span>
-      <strong>${count}</strong>
-    `;
-    rows.appendChild(row);
-  });
 }
 
 function renderFilters() {
@@ -307,21 +268,16 @@ function renderFilters() {
 function renderSortControls() {
   const sortKey = document.getElementById("sortKey");
   const sortDirection = document.getElementById("sortDirection");
-
   sortKey.value = dashboard.sortKey;
   sortDirection.textContent = sortLabels[dashboard.sortDirection];
-  sortDirection.setAttribute(
-    "aria-label",
-    dashboard.sortDirection === "asc" ? "Sort in reverse order" : "Sort in forward order"
-  );
   sortDirection.classList.toggle("is-forward", dashboard.sortDirection === "asc");
 }
 
-function selectProject(projectId, scrollSelector = ".focus-panel") {
+function selectProject(projectId, scrollSelector = ".selected-panel") {
   dashboard.selectedId = projectId;
   renderProjects();
   const target = document.querySelector(scrollSelector);
-  if (target) target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function renderCalendar() {
@@ -351,7 +307,7 @@ function renderCalendar() {
   text(
     "calendarSummary",
     monthSessions.length
-      ? `${monthSessions.length.toLocaleString()} sessions · ${formatDuration(monthMinutes)} tracked this month`
+      ? `${monthSessions.length.toLocaleString()} sessions · ${formatDuration(monthMinutes)} this month`
       : "No tracked sessions in the visible project set this month."
   );
 
@@ -363,7 +319,7 @@ function renderCalendar() {
   });
 
   grid.innerHTML = "";
-  ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].forEach((day) => {
+  ["S", "M", "T", "W", "T", "F", "S"].forEach((day) => {
     const label = document.createElement("span");
     label.className = "calendar-weekday";
     label.textContent = day;
@@ -392,14 +348,14 @@ function renderCalendar() {
     ]
       .filter(Boolean)
       .join(" ");
-    button.setAttribute("aria-label", `${formatDayLabel(key)} ${formatDuration(dayMinutes)} tracked`);
+    button.setAttribute("aria-label", `${formatDayLabel(key)} ${formatDuration(dayMinutes)}`);
 
     const number = document.createElement("strong");
     number.textContent = String(day);
     button.appendChild(number);
 
     const count = document.createElement("span");
-    count.textContent = daySessions.length ? formatDuration(dayMinutes) : "";
+    count.textContent = daySessions.length ? `${daySessions.length}` : "";
     button.appendChild(count);
 
     button.addEventListener("click", () => {
@@ -443,13 +399,7 @@ function renderCalendarDetails(daySessions) {
       row.appendChild(projectButton);
 
       const meta = document.createElement("p");
-      meta.textContent = [
-        formatDuration(session.minutes),
-        session.machine,
-        session.conversation,
-      ]
-        .filter(Boolean)
-        .join(" · ");
+      meta.textContent = [formatDuration(session.minutes), session.machine, session.conversation].filter(Boolean).join(" · ");
       row.appendChild(meta);
 
       if (session.summary) {
@@ -473,14 +423,12 @@ function moveCalendarMonth(offset) {
 function listItems(id, items, tag) {
   const list = document.getElementById(id);
   list.innerHTML = "";
-
   if (!items || items.length === 0) {
     const item = document.createElement(tag);
     item.textContent = "None recorded.";
     list.appendChild(item);
     return;
   }
-
   items.forEach((value) => {
     const item = document.createElement(tag);
     item.textContent = value;
@@ -490,26 +438,17 @@ function listItems(id, items, tag) {
 
 function renderFocus(project) {
   if (!project) return;
-
-  const blockers = project.blockers || [];
-  const panel = document.querySelector(".focus-panel");
-  const state = document.getElementById("focusState");
-
-  if (panel) {
-    panel.classList.toggle("has-blockers", blockers.length > 0);
-  }
-
   text("focusName", project.name);
   text("focusSummary", project.summary);
-  text("focusState", project.state);
-  text("focusBlockerCount", blockers.length.toLocaleString());
   text("focusTimeSpent", formatDuration(project.time_tracking?.approx_minutes_total));
   text("focusPath", project.path);
   text("focusResume", project.resume_file);
+  listItems("focusActions", project.next_actions, "li");
+  listItems("focusBlockers", project.blockers, "li");
 
-  if (state) {
-    state.className = `state-pill ${colorClass(project.state, "state")}`;
-  }
+  const state = document.getElementById("focusState");
+  state.textContent = project.state;
+  state.className = `state-pill ${colorClass(project.state, "state")}`;
 
   const stateSelect = document.getElementById("projectStateSelect");
   if (stateSelect) {
@@ -517,19 +456,14 @@ function renderFocus(project) {
     stateSelect.value = project.state;
   }
 
-  listItems("focusActions", project.next_actions, "li");
-  listItems("focusBlockers", blockers, "li");
-
   const link = document.getElementById("focusLink");
-  const primaryLink = project.links.primary || "#";
-  const hasExternalLink = primaryLink !== "#";
-
-  link.href = hasExternalLink ? primaryLink : "#";
-  link.textContent = project.links.primary_label || "Open";
-  link.classList.toggle("is-disabled", !hasExternalLink);
-  link.toggleAttribute("aria-disabled", !hasExternalLink);
-
-  if (hasExternalLink) {
+  const primaryLink = project.links?.primary || "#";
+  const hasLink = primaryLink !== "#";
+  link.href = hasLink ? primaryLink : "#";
+  link.textContent = project.links?.primary_label || "Open";
+  link.classList.toggle("is-disabled", !hasLink);
+  link.toggleAttribute("aria-disabled", !hasLink);
+  if (hasLink) {
     link.target = "_blank";
     link.rel = "noopener";
   } else {
@@ -550,7 +484,7 @@ async function saveProjectState() {
     return;
   }
   if (nextState === project.state) {
-    text("syncStatus", `${project.name} is already ${nextState}.`);
+    text("syncStatus", `Already ${nextState}.`);
     return;
   }
   if (!window.confirm(`Move "${project.name}" from ${project.state} to ${nextState}?`)) {
@@ -580,13 +514,13 @@ async function saveProjectState() {
     dashboard.selectedId = project.id;
     dashboard.visibleStates.add(nextState);
     renderAll();
-    text("syncStatus", `Moved ${project.name} to ${nextState}.`);
+    text("syncStatus", `Moved to ${nextState}.`);
   } catch (error) {
     select.value = project.state;
     text("syncStatus", `State update skipped: ${error.message}`);
   } finally {
     button.disabled = false;
-    text("saveProjectState", "Save State");
+    text("saveProjectState", "Save");
   }
 }
 
@@ -729,7 +663,6 @@ function resumeShellCommand(project, target) {
 }
 
 async function copyText(value, elementId, restoredLabel) {
-  const element = document.getElementById(elementId);
   try {
     await navigator.clipboard.writeText(value);
     text(elementId, "Copied");
@@ -789,12 +722,10 @@ async function loadDashboardData() {
 
 function renderAll() {
   renderOverview();
-  renderBars();
   renderFilters();
   renderSortControls();
   renderProjects();
   renderCalendar();
-  renderActivity();
 }
 
 async function syncSelectedProject() {
@@ -811,7 +742,7 @@ async function syncSelectedProject() {
 
   button.disabled = true;
   text("syncSelectedProject", "Syncing...");
-  text("syncStatus", "Running one AI call for the selected project only.");
+  text("syncStatus", "One AI call for the selected project only.");
 
   try {
     const response = await fetch("/api/sync-selected-project", {
@@ -833,13 +764,13 @@ async function syncSelectedProject() {
     dashboard.aiBudget = payload.budget;
     dashboard.selectedId = project.id;
     renderAll();
-    text("syncStatus", `Synced ${project.name}.`);
+    text("syncStatus", "Synced.");
   } catch (error) {
     text("syncStatus", `Sync skipped: ${error.message}`);
     await loadAiBudget();
   } finally {
     button.disabled = false;
-    text("syncSelectedProject", "Sync Selected");
+    text("syncSelectedProject", "Sync");
   }
 }
 
@@ -863,59 +794,29 @@ function renderProjects() {
   }
 
   projects.forEach((project) => {
-    const card = document.createElement("article");
+    const card = document.createElement("button");
+    card.type = "button";
     card.className = `project-card${project.id === dashboard.selectedId ? " is-selected" : ""}`;
     card.innerHTML = `
-      <div class="project-card-heading">
-        <div>
-          <span class="state-pill ${colorClass(project.state, "state")}">${project.state}</span>
-          <h3>${project.name}</h3>
-          <p>${project.summary}</p>
-        </div>
-        <button type="button">Select</button>
+      <span class="state-pill ${colorClass(project.state, "state")}">${project.state}</span>
+      <div>
+        <h3>${project.name}</h3>
+        <p>${project.summary}</p>
       </div>
-      <dl class="project-meta">
-        <div>
-          <dt>Updated</dt>
-          <dd>${formatDate(project.updated_at)}</dd>
-        </div>
-        <div>
-          <dt>Path</dt>
-          <dd class="mono">${project.path}</dd>
-        </div>
-        <div>
-          <dt>Next</dt>
-          <dd>${project.next_actions[0] || "No next action recorded."}</dd>
-        </div>
-      </dl>
+      <div class="project-meta">
+        <span>${formatDate(project.updated_at)}</span>
+        <span>${(project.blockers || []).length} blockers</span>
+      </div>
       <div class="tag-row">
-        ${project.tags.map((tag) => `<span>${tag}</span>`).join("")}
+        ${(project.tags || []).slice(0, 4).map((tag) => `<span>${tag}</span>`).join("")}
       </div>
     `;
-    card.querySelector("button").addEventListener("click", () => {
+    card.addEventListener("click", () => {
       dashboard.selectedId = project.id;
       renderProjects();
-      document.querySelector(".focus-panel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      document.querySelector(".selected-panel").scrollIntoView({ behavior: "smooth", block: "start" });
     });
     cards.appendChild(card);
-  });
-}
-
-function renderActivity() {
-  const rows = document.getElementById("activityRows");
-  rows.innerHTML = "";
-
-  dashboard.data.recent_activity.forEach((activity) => {
-    const row = document.createElement("article");
-    row.className = "activity-row";
-    row.innerHTML = `
-      <div>
-        <strong>${activity.title}</strong>
-        <p>${activity.summary}</p>
-      </div>
-      <span class="mono">${formatDate(activity.updated_at)}</span>
-    `;
-    rows.appendChild(row);
   });
 }
 
@@ -977,5 +878,5 @@ async function init() {
 }
 
 init().catch((error) => {
-  text("dashboardStatus", `Could not load dashboard data: ${error.message}`);
+  text("mobileStatus", `Could not load dashboard data: ${error.message}`);
 });

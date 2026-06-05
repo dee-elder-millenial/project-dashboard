@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+
+node_modules/
+package.json
+package-lock.json
+
+data/backups/
+data/*.sqlite3-shm
+data/*.sqlite3-wal
+data/ingest-audit.jsonl

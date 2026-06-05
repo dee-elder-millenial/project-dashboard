@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Project Dashboard Mobile</title>
+    <link rel="stylesheet" href="assets/mobile.css?v=20260605-api-dashboard">
+  </head>
+  <body>
+    <header class="mobile-header">
+      <a class="mark" href="index.html?desktop=1" aria-label="Open desktop dashboard">
+        <img src="assets/project-mark.svg" alt="" width="38" height="38">
+      </a>
+      <div>
+        <h1>Projects</h1>
+        <p id="mobileStatus">Loading project map...</p>
+      </div>
+      <nav class="mobile-top-links" aria-label="Mobile links">
+        <a class="desktop-link" href="manual.html">Manual</a>
+        <a class="desktop-link" href="index.html?desktop=1">Desktop</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="stats" aria-label="Project summary">
+        <article>
+          <span>Projects</span>
+          <strong id="projectCount">0</strong>
+        </article>
+        <article>
+          <span>Active</span>
+          <strong id="activeCount">0</strong>
+        </article>
+        <article>
+          <span>Blocked</span>
+          <strong id="blockedCount">0</strong>
+        </article>
+        <article>
+          <span>AI Budget</span>
+          <strong id="aiSpendTotal">$0.00</strong>
+        </article>
+      </section>
+      <p id="aiBudgetStatus" class="mobile-budget-status">Local spend log only</p>
+
+      <section class="mobile-controls" aria-label="Find projects">
+        <input id="search" type="search" placeholder="Search projects">
+        <div class="control-row">
+          <select id="sortKey" aria-label="Sort projects by">
+            <option value="lastActive">Last Active</option>
+            <option value="startDate">Start Date</option>
+            <option value="alpha">Alphabetical</option>
+          </select>
+          <button id="sortDirection" type="button">Reverse</button>
+        </div>
+        <div id="filters" class="chip-row" aria-label="State filters"></div>
+      </section>
+
+      <section aria-label="Project list">
+        <div class="list-heading">
+          <h2 id="resultCount">0 projects</h2>
+          <span id="updatedAt">Unknown</span>
+        </div>
+        <div id="projectCards" class="project-list"></div>
+      </section>
+
+      <section class="mobile-calendar" aria-label="Project work calendar">
+        <div class="calendar-header">
+          <div>
+            <span>Work Calendar</span>
+            <h2 id="calendarMonthLabel">Calendar</h2>
+            <p id="calendarSummary">Loading tracked sessions...</p>
+          </div>
+          <div class="calendar-controls">
+            <button id="calendarPrev" type="button" aria-label="Previous month">Prev</button>
+            <button id="calendarToday" type="button">Today</button>
+            <button id="calendarNext" type="button" aria-label="Next month">Next</button>
+          </div>
+        </div>
+        <div id="calendarGrid" class="calendar-grid" aria-label="Calendar month"></div>
+        <div id="calendarDayDetails" class="calendar-day-details"></div>
+      </section>
+
+      <section class="selected-panel" aria-label="Selected project">
+        <span id="focusState" class="state-pill">Unknown</span>
+        <h2 id="focusName">No project selected</h2>
+        <p id="focusTimeSpent" class="time-spent">0m tracked</p>
+        <p id="focusSummary"></p>
+        <div class="state-editor" aria-label="Project state editor">
+          <label for="projectStateSelect">Project state</label>
+          <div>
+            <select id="projectStateSelect"></select>
+            <button id="saveProjectState" type="button">Save</button>
+          </div>
+        </div>
+        <div class="action-row">
+          <a id="focusLink" href="#">Open</a>
+          <button id="copyResume" type="button">Copy Resume</button>
+        </div>
+        <p id="syncStatus" class="sync-status" aria-live="polite"></p>
+        <div class="resume-launchers">
+          <button id="openChatGPT" type="button">ChatGPT</button>
+          <button id="openCodex" type="button">Codex</button>
+          <button id="copyTerminal" type="button">Terminal</button>
+        </div>
+        <details>
+          <summary>Next actions and blockers</summary>
+          <h3>Next Actions</h3>
+          <ol id="focusActions"></ol>
+          <h3>Blockers</h3>
+          <ul id="focusBlockers"></ul>
+          <dl>
+            <div>
+              <dt>Path</dt>
+              <dd id="focusPath"></dd>
+            </div>
+            <div>
+              <dt>Resume</dt>
+              <dd id="focusResume"></dd>
+            </div>
+          </dl>
+        </details>
+      </section>
+    </main>
+
+    <script src="assets/mobile.js?v=20260605-state-write"></script>
+  </body>
+</html>

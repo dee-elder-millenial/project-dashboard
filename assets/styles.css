@@ -22,8 +22,9 @@
   --steel: #c7d2e6;
 
   --active: #82f2b0;
+  --on-hold: #ff9f7a;
+  --complete: #c7d2e6;
   --staged: #ffd166;
-  --synced: #68e8ff;
   --reference: #b28cff;
 
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
@@ -77,6 +78,12 @@ a {
 button,
 input {
   font: inherit;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+  transform: none;
 }
 
 h1,
@@ -169,6 +176,7 @@ h1 {
 
 .header-actions a,
 .focus-buttons a,
+.resume-launchers a,
 button {
   display: inline-flex;
   align-items: center;
@@ -190,6 +198,7 @@ button {
 
 .header-actions a:hover,
 .focus-buttons a:hover,
+.resume-launchers a:hover,
 button:hover {
   transform: translateY(-1px);
   border-color: rgba(104, 232, 255, 0.52);
@@ -229,7 +238,7 @@ h3 {
 
 .overview {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -238,6 +247,7 @@ h3 {
 .controls,
 .focus-panel,
 .project-card,
+.calendar-panel,
 .activity-panel {
   border: 1px solid var(--line);
   background:
@@ -278,6 +288,10 @@ h3 {
   background: rgba(178, 140, 255, 0.14);
 }
 
+.overview article:nth-child(5)::before {
+  background: rgba(255, 209, 102, 0.13);
+}
+
 .overview strong {
   position: relative;
   display: block;
@@ -287,14 +301,204 @@ h3 {
   letter-spacing: -0.055em;
 }
 
+.ai-budget-card p {
+  position: relative;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.workload-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(430px, 0.95fr);
+  gap: 14px;
+  margin-top: 14px;
+  align-items: stretch;
+}
+
 .workload-panel {
   display: grid;
-  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
-  gap: 18px;
-  margin-top: 14px;
+  grid-template-columns: minmax(160px, 230px) minmax(0, 1fr);
+  gap: 16px;
   padding: 18px;
   border-radius: var(--radius-lg);
   align-items: center;
+}
+
+.calendar-panel {
+  padding: 14px;
+  border-radius: var(--radius-lg);
+}
+
+.calendar-header,
+.calendar-layout {
+  display: grid;
+  gap: 10px;
+}
+
+.calendar-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.calendar-header p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.calendar-controls {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 6px;
+}
+
+.calendar-controls button {
+  min-height: 32px;
+  padding: 6px 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.calendar-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 185px);
+  margin-top: 10px;
+  align-items: start;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.calendar-weekday {
+  color: var(--muted-2);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.calendar-empty {
+  min-height: 34px;
+}
+
+.calendar-day {
+  display: grid;
+  align-content: space-between;
+  justify-content: stretch;
+  justify-items: start;
+  min-height: 34px;
+  border-radius: 8px;
+  padding: 5px 6px;
+  color: var(--muted);
+  text-align: left;
+}
+
+.calendar-day strong {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.calendar-day span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted-2);
+  font-size: 7px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-day.has-work {
+  border-color: rgba(130, 242, 176, 0.34);
+  background: linear-gradient(180deg, rgba(130, 242, 176, 0.12), rgba(255, 255, 255, 0.045));
+}
+
+.calendar-day.has-work span {
+  color: var(--green);
+}
+
+.calendar-day.is-selected {
+  border-color: rgba(104, 232, 255, 0.68);
+  background: linear-gradient(180deg, rgba(104, 232, 255, 0.18), rgba(255, 255, 255, 0.05));
+  box-shadow: 0 0 0 1px rgba(104, 232, 255, 0.13) inset;
+}
+
+.calendar-day.is-today strong {
+  color: var(--cyan);
+}
+
+.calendar-day-panel {
+  min-width: 0;
+  border-left: 1px solid var(--line);
+  padding-left: 10px;
+}
+
+.calendar-day-details {
+  display: grid;
+  gap: 7px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 5px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(104, 232, 255, 0.45) rgba(255, 255, 255, 0.06);
+}
+
+.calendar-day-details::-webkit-scrollbar {
+  width: 7px;
+}
+
+.calendar-day-details::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.calendar-day-details::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(104, 232, 255, 0.45);
+}
+
+.calendar-day-details h3 {
+  margin: 0 0 2px;
+  font-size: 14px;
+}
+
+.calendar-session {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  padding: 7px;
+}
+
+.calendar-session button {
+  justify-content: flex-start;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  padding: 0;
+  font-weight: 800;
+  font-size: 12px;
+  text-align: left;
+}
+
+.calendar-session button:hover {
+  transform: none;
+  color: var(--cyan);
+}
+
+.calendar-session p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
 }
 
 .state-bars {
@@ -336,14 +540,19 @@ h3 {
   background: linear-gradient(90deg, rgba(130, 242, 176, 0.55), var(--active));
 }
 
+.fill-on-hold {
+  color: var(--on-hold);
+  background: linear-gradient(90deg, rgba(255, 159, 122, 0.5), var(--on-hold));
+}
+
+.fill-complete {
+  color: var(--complete);
+  background: linear-gradient(90deg, rgba(199, 210, 230, 0.45), var(--complete));
+}
+
 .fill-staged {
   color: var(--staged);
   background: linear-gradient(90deg, rgba(255, 209, 102, 0.5), var(--staged));
-}
-
-.fill-synced {
-  color: var(--synced);
-  background: linear-gradient(90deg, rgba(104, 232, 255, 0.5), var(--synced));
 }
 
 .fill-reference {
@@ -353,14 +562,15 @@ h3 {
 
 .controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 12px;
   margin-top: 14px;
   padding: 12px;
   border-radius: var(--radius-lg);
 }
 
-input {
+input,
+select {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--line);
@@ -377,9 +587,28 @@ input::placeholder {
   color: var(--muted-2);
 }
 
-input:focus {
+input:focus,
+select:focus {
   border-color: rgba(104, 232, 255, 0.62);
   box-shadow: 0 0 0 4px rgba(104, 232, 255, 0.09);
+}
+
+.sort-controls {
+  display: grid;
+  grid-template-columns: minmax(150px, 180px) minmax(98px, auto);
+  gap: 8px;
+}
+
+.sort-controls button {
+  min-height: 42px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sort-controls button.is-forward {
+  border-color: rgba(130, 242, 176, 0.4);
+  background: rgba(130, 242, 176, 0.1);
+  color: var(--text);
 }
 
 .filters {
@@ -399,6 +628,11 @@ input:focus {
   border-color: rgba(104, 232, 255, 0.52);
   background: rgba(104, 232, 255, 0.13);
   color: var(--text);
+}
+
+.filters button.is-hidden-state {
+  opacity: 0.56;
+  text-decoration: line-through;
 }
 
 .dashboard-grid {
@@ -467,9 +701,38 @@ dd {
 }
 
 .focus-buttons {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.state-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.state-editor label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.state-editor > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.state-editor button {
+  min-width: 118px;
+}
+
+.resume-launchers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .focus-buttons a {
@@ -479,8 +742,35 @@ dd {
   font-weight: 850;
 }
 
+.sync-status {
+  min-height: 20px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.focus-buttons a.is-disabled {
+  pointer-events: none;
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+
 .focus-buttons button {
   flex: 1 1 auto;
+}
+
+.resume-launchers a,
+.resume-launchers button {
+  min-height: 36px;
+  padding: 7px 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.resume-launchers a:hover,
+.resume-launchers button:hover {
+  color: var(--text);
 }
 
 .project-section {
@@ -587,14 +877,19 @@ dd {
   background: rgba(130, 242, 176, 0.085);
 }
 
+.state-on-hold {
+  color: var(--on-hold);
+  background: rgba(255, 159, 122, 0.09);
+}
+
+.state-complete {
+  color: var(--complete);
+  background: rgba(199, 210, 230, 0.085);
+}
+
 .state-staged {
   color: var(--staged);
   background: rgba(255, 209, 102, 0.085);
-}
-
-.state-synced {
-  color: var(--synced);
-  background: rgba(104, 232, 255, 0.085);
 }
 
 .state-reference {
@@ -684,6 +979,10 @@ dd {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .workload-row {
+    grid-template-columns: 1fr;
+  }
+
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
@@ -691,6 +990,17 @@ dd {
   .focus-panel {
     position: relative;
     top: auto;
+  }
+
+  .calendar-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-day-panel {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+    padding-left: 0;
   }
 }
 
@@ -717,8 +1027,10 @@ dd {
   }
 
   .overview,
+  .workload-row,
   .workload-panel,
   .controls,
+  .sort-controls,
   .project-meta,
   .activity-row {
     grid-template-columns: 1fr;
@@ -742,6 +1054,28 @@ dd {
 
   .state-bar {
     grid-template-columns: 78px minmax(0, 1fr) 28px;
+  }
+
+  .calendar-header {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .calendar-empty,
+  .calendar-day {
+    min-height: 48px;
+  }
+
+  .calendar-day {
+    border-radius: 9px;
+    padding: 7px;
+  }
+
+  .calendar-day span {
+    font-size: 7px;
   }
 }
 
@@ -897,7 +1231,7 @@ h1 {
 }
 
 .workload-panel {
-  grid-template-columns: 230px minmax(0, 1fr);
+  grid-template-columns: minmax(155px, 210px) minmax(0, 1fr);
   padding: 15px 18px;
 }
 
@@ -1128,7 +1462,7 @@ input {
 
 .command-panel .focus-buttons {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   border-top: 1px solid var(--line);
   margin-top: 0;
   padding-top: 12px;
@@ -1139,9 +1473,431 @@ input {
   width: 100%;
 }
 
+.manual-main {
+  display: grid;
+  gap: 18px;
+}
+
+.manual-hero,
+.manual-section,
+.manual-panel,
+.manual-callout {
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.035)),
+    var(--surface);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(14px);
+}
+
+.manual-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(260px, 0.8fr);
+  gap: 18px;
+  align-items: stretch;
+  padding: 22px;
+  border-radius: var(--radius-xl);
+}
+
+.manual-hero h2 {
+  max-width: 880px;
+  font-size: clamp(28px, 4vw, 48px);
+}
+
+.manual-hero p,
+.manual-panel p,
+.manual-section p,
+.manual-callout p {
+  color: var(--muted);
+}
+
+.manual-hero p {
+  max-width: 900px;
+  margin-top: 14px;
+  font-size: 16px;
+}
+
+.manual-callout {
+  display: grid;
+  align-content: center;
+  min-height: 100%;
+  padding: 18px;
+  border-color: rgba(255, 209, 102, 0.32);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(135deg, rgba(255, 209, 102, 0.12), rgba(104, 232, 255, 0.045)),
+    var(--surface);
+}
+
+.manual-stats article p {
+  position: relative;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.manual-section {
+  padding: 20px;
+  border-radius: var(--radius-xl);
+}
+
+.manual-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.manual-panel {
+  min-height: 210px;
+  padding: 18px;
+  border-radius: var(--radius-lg);
+}
+
+.manual-panel h2 {
+  margin-bottom: 12px;
+}
+
+.architecture-diagram {
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02)),
+    rgba(0, 0, 0, 0.16);
+  padding: 10px;
+}
+
+.architecture-diagram svg {
+  display: block;
+  width: 100%;
+  min-width: 920px;
+  height: auto;
+}
+
+.compact-diagram svg {
+  min-width: 820px;
+}
+
+.architecture-diagram .zone {
+  fill: rgba(255, 255, 255, 0.025);
+  stroke: rgba(167, 181, 211, 0.18);
+  stroke-width: 1.5;
+}
+
+.architecture-diagram .zone-public {
+  stroke: rgba(104, 232, 255, 0.24);
+}
+
+.architecture-diagram .zone-server {
+  stroke: rgba(119, 167, 255, 0.26);
+}
+
+.architecture-diagram .zone-external {
+  stroke: rgba(255, 122, 168, 0.22);
+}
+
+.architecture-diagram .block {
+  fill: rgba(17, 23, 38, 0.94);
+  stroke: rgba(167, 181, 211, 0.22);
+  stroke-width: 1.4;
+}
+
+.architecture-diagram .block-user {
+  stroke: rgba(104, 232, 255, 0.52);
+}
+
+.architecture-diagram .block-edge {
+  stroke: rgba(178, 140, 255, 0.52);
+}
+
+.architecture-diagram .block-server {
+  stroke: rgba(119, 167, 255, 0.58);
+}
+
+.architecture-diagram .block-ui {
+  stroke: rgba(104, 232, 255, 0.36);
+}
+
+.architecture-diagram .block-api {
+  stroke: rgba(255, 209, 102, 0.5);
+}
+
+.architecture-diagram .block-tool {
+  stroke: rgba(130, 242, 176, 0.5);
+}
+
+.architecture-diagram .block-data {
+  stroke: rgba(255, 209, 102, 0.48);
+}
+
+.architecture-diagram .block-ai {
+  stroke: rgba(255, 122, 168, 0.56);
+}
+
+.architecture-diagram .block-log {
+  stroke: rgba(199, 210, 230, 0.38);
+}
+
+.architecture-diagram .caption,
+.architecture-diagram .limit-badge {
+  fill: rgba(255, 255, 255, 0.055);
+  stroke: rgba(167, 181, 211, 0.16);
+}
+
+.architecture-diagram .connector {
+  fill: none;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.architecture-diagram .connector.strong {
+  stroke: rgba(104, 232, 255, 0.76);
+  marker-end: url("#arrow-main");
+}
+
+.architecture-diagram .connector.muted {
+  stroke: rgba(167, 181, 211, 0.42);
+  marker-end: url("#arrow-muted");
+}
+
+.architecture-diagram .connector.daily {
+  stroke: rgba(130, 242, 176, 0.74);
+  marker-end: url("#arrow-daily");
+}
+
+.architecture-diagram marker path {
+  fill: currentColor;
+}
+
+#arrow-main path,
+#arrow-daily path {
+  fill: rgba(104, 232, 255, 0.86);
+}
+
+#arrow-muted path {
+  fill: rgba(167, 181, 211, 0.58);
+}
+
+.architecture-diagram text {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+
+.architecture-diagram .zone-label {
+  fill: var(--muted-2);
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 1.4px;
+}
+
+.architecture-diagram .block-title {
+  fill: var(--text);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.architecture-diagram .block-subtitle {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.architecture-diagram .caption-text,
+.architecture-diagram .badge-text,
+.architecture-diagram .loop-label {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.guardrail-step,
+.todo-item,
+.file-map div,
+.manual-command-grid > div {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.052);
+}
+
+.guardrail-step strong,
+.file-map strong {
+  display: block;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.guardrail-step span,
+.file-map span {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.guardrail-lane {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.guardrail-step {
+  min-height: 132px;
+  padding: 16px;
+}
+
+.guardrail-step::before {
+  content: "";
+  display: block;
+  width: 34px;
+  height: 4px;
+  margin-bottom: 14px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--cyan), var(--green));
+}
+
+.todo-list {
+  display: grid;
+  gap: 10px;
+}
+
+.todo-item {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 14px;
+}
+
+.todo-item span {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(104, 232, 255, 0.24);
+  border-radius: var(--radius-md);
+  color: var(--cyan);
+  background: rgba(104, 232, 255, 0.08);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.todo-item p {
+  min-width: 0;
+  margin: 0;
+}
+
+.todo-item.priority {
+  border-color: rgba(255, 209, 102, 0.28);
+  background:
+    linear-gradient(135deg, rgba(255, 209, 102, 0.1), rgba(104, 232, 255, 0.035)),
+    rgba(255, 255, 255, 0.052);
+}
+
+.todo-item.priority span {
+  border-color: rgba(255, 209, 102, 0.34);
+  color: var(--gold);
+  background: rgba(255, 209, 102, 0.1);
+}
+
+.manual-command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.manual-command-grid > div {
+  min-width: 0;
+  padding: 16px;
+}
+
+pre {
+  overflow: auto;
+  margin: 10px 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.24);
+  padding: 13px;
+}
+
+code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  color: var(--steel);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.manual-table-wrap {
+  overflow-x: auto;
+}
+
+.manual-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 740px;
+}
+
+.manual-table th,
+.manual-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 14px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.manual-table th {
+  color: var(--muted-2);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.manual-table td {
+  color: var(--muted);
+}
+
+.manual-table td:first-child {
+  color: var(--text);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.file-map {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.file-map div {
+  min-height: 118px;
+  padding: 15px;
+}
+
 @media (max-width: 760px) {
   .command-strip,
   .command-panel .focus-buttons {
     grid-template-columns: 1fr;
+  }
+
+  .manual-hero,
+  .manual-grid,
+  .manual-command-grid,
+  .guardrail-lane,
+  .file-map {
+    grid-template-columns: 1fr;
+  }
+
+  .manual-hero {
+    padding: 18px;
+  }
+
+  .manual-hero h2 {
+    font-size: 28px;
+  }
+
+  .guardrail-step,
+  .manual-panel,
+  .file-map div {
+    min-height: auto;
   }
 }

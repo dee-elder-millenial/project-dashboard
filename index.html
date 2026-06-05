@@ -4,7 +4,15 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Dee's Project Dashboard</title>
-    <link rel="stylesheet" href="assets/styles.css">
+    <link rel="stylesheet" href="assets/styles.css?v=20260605-api-dashboard">
+    <script>
+      if (
+        !new URLSearchParams(window.location.search).has("desktop") &&
+        window.matchMedia("(max-width: 760px)").matches
+      ) {
+        window.location.replace("mobile.html?v=20260605-state-write");
+      }
+    </script>
   </head>
   <body>
     <header class="app-header">
@@ -16,8 +24,10 @@
         </div>
       </div>
       <nav class="header-actions" aria-label="Dashboard links">
-        <a href="http://dees-workbench.local:8088/">Archive</a>
-        <a href="http://dees-workbench.local:8088/finance.html">Finance</a>
+        <a href="https://home.dees-workbench.com/">Home Site</a>
+        <a href="manual.html">Manual</a>
+        <a href="mobile.html?v=20260605-state-write">Mobile</a>
+        <a href="#projectCards">Projects</a>
       </nav>
     </header>
 
@@ -39,18 +49,55 @@
           <span class="label">Updated</span>
           <strong id="updatedAt">Unknown</strong>
         </article>
+        <article class="ai-budget-card">
+          <span class="label">AI Budget</span>
+          <strong id="aiSpendTotal">$0.00</strong>
+          <p id="aiBudgetStatus">Local spend log only</p>
+        </article>
       </section>
 
-      <section class="workload-panel" aria-label="Project state distribution">
-        <div>
-          <span class="label">Portfolio State</span>
-          <h2>Current Workload</h2>
-        </div>
-        <div id="stateBars" class="state-bars"></div>
-      </section>
+      <div class="workload-row">
+        <section class="workload-panel" aria-label="Project state distribution">
+          <div>
+            <span class="label">Portfolio State</span>
+            <h2>Current Workload</h2>
+          </div>
+          <div id="stateBars" class="state-bars"></div>
+        </section>
+
+        <section class="calendar-panel" aria-label="Project work calendar">
+          <div class="calendar-header">
+            <div>
+              <span class="label">Work Calendar</span>
+              <h2 id="calendarMonthLabel">Calendar</h2>
+              <p id="calendarSummary">Loading tracked sessions...</p>
+            </div>
+            <div class="calendar-controls" aria-label="Calendar controls">
+              <button id="calendarPrev" type="button" aria-label="Previous month">Prev</button>
+              <button id="calendarToday" type="button">Today</button>
+              <button id="calendarNext" type="button" aria-label="Next month">Next</button>
+            </div>
+          </div>
+          <div class="calendar-layout">
+            <div id="calendarGrid" class="calendar-grid" aria-label="Calendar month"></div>
+            <div class="calendar-day-panel">
+              <span class="label">Selected Day</span>
+              <div id="calendarDayDetails" class="calendar-day-details"></div>
+            </div>
+          </div>
+        </section>
+      </div>
 
       <section class="controls" aria-label="Find projects">
         <input id="search" type="search" placeholder="Search projects, paths, next actions">
+        <div class="sort-controls" aria-label="Project sort controls">
+          <select id="sortKey" aria-label="Sort projects by">
+            <option value="lastActive">Last Active</option>
+            <option value="startDate">Start Date</option>
+            <option value="alpha">Alphabetical</option>
+          </select>
+          <button id="sortDirection" type="button" aria-label="Reverse sort order">Reverse</button>
+        </div>
         <div id="filters" class="filters" aria-label="State filters"></div>
       </section>
 
@@ -68,6 +115,10 @@
             <div>
               <span class="label">Blockers</span>
               <strong id="focusBlockerCount">0</strong>
+            </div>
+            <div>
+              <span class="label">Time</span>
+              <strong id="focusTimeSpent">0m</strong>
             </div>
           </div>
 
@@ -95,9 +146,24 @@
             </dl>
           </details>
 
+          <div class="state-editor" aria-label="Project state editor">
+            <label for="projectStateSelect">Project state</label>
+            <div>
+              <select id="projectStateSelect"></select>
+              <button id="saveProjectState" type="button">Save State</button>
+            </div>
+          </div>
+
           <div class="focus-buttons">
             <a id="focusLink" href="#" target="_blank" rel="noopener">Open</a>
             <button id="copyResume" type="button">Copy Resume</button>
+          </div>
+          <p id="syncStatus" class="sync-status" aria-live="polite"></p>
+
+          <div class="resume-launchers" aria-label="AI resume launchers">
+            <button id="openChatGPT" type="button">ChatGPT</button>
+            <button id="openCodex" type="button">Codex</button>
+            <button id="copyTerminal" type="button">Terminal</button>
           </div>
         </aside>
 
@@ -123,6 +189,6 @@
       </section>
     </main>
 
-    <script src="assets/app.js"></script>
+    <script src="assets/app.js?v=20260605-state-write"></script>
   </body>
 </html>

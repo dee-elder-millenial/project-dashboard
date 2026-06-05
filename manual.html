@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Project Dashboard Manual</title>
+    <link rel="stylesheet" href="assets/styles.css?v=20260605-manual-auth-sqlite">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <img src="assets/project-mark.svg" alt="" width="44" height="44">
+        <div>
+          <h1>Manual</h1>
+          <p>How the Project Dashboard stores project state, resumes work, runs guarded AI syncs, and keeps continuity across the server.</p>
+        </div>
+      </div>
+      <nav class="header-actions" aria-label="Manual links">
+        <a href="index.html?desktop=1">Dashboard</a>
+        <a href="mobile.html">Mobile</a>
+        <a href="https://home.dees-workbench.com/">Home Site</a>
+      </nav>
+    </header>
+
+    <main class="manual-main">
+      <section class="manual-hero" aria-label="Manual overview">
+        <div>
+          <span class="label">Operator Guide</span>
+          <h2>One place to see what is active, where it lives, and how to resume it.</h2>
+          <p>
+            Project Dashboard is a local-first command center for `/srv/cloud-mirror`.
+            It keeps a validated SQLite project database, requires API authorization,
+            limits browser writes to project state changes, and keeps AI sync internal.
+          </p>
+        </div>
+        <div class="manual-callout">
+          <span class="label">Golden Rule</span>
+          <p>Use `project-dashboard-ingest` or dashboard APIs for updates. `data/projects.json` is only a diagnostic sentinel.</p>
+        </div>
+      </section>
+
+      <section class="overview manual-stats" aria-label="System facts">
+        <article>
+          <span class="label">Source</span>
+          <strong>SQLite</strong>
+          <p>`data/projects.sqlite3`</p>
+        </article>
+        <article>
+          <span class="label">API Reads</span>
+          <strong>Auth</strong>
+          <p>Access email or internal token</p>
+        </article>
+        <article>
+          <span class="label">User Writes</span>
+          <strong>State</strong>
+          <p>Only project state can be changed in UI</p>
+        </article>
+        <article>
+          <span class="label">Audit</span>
+          <strong>SQLite</strong>
+          <p>State changes and ingest attempts</p>
+        </article>
+        <article>
+          <span class="label">Public Edge</span>
+          <strong>Access</strong>
+          <p>Cloudflare protects the projects host</p>
+        </article>
+      </section>
+
+      <section class="manual-section" aria-labelledby="map-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Block Diagram</span>
+            <h2 id="map-title">Request and Data Flow</h2>
+          </div>
+        </div>
+        <div class="architecture-diagram" role="img" aria-label="Browser traffic enters through Cloudflare Access, reaches the host router, authenticates API reads and state writes, stores project data in SQLite, and keeps AI sync internal-token-only.">
+          <svg viewBox="0 0 1180 640" aria-hidden="true">
+            <defs>
+              <marker id="arrow-main" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z"></path>
+              </marker>
+              <marker id="arrow-muted" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z"></path>
+              </marker>
+            </defs>
+
+            <rect class="zone zone-public" x="24" y="42" width="332" height="230" rx="18"></rect>
+            <text class="zone-label" x="48" y="74">PUBLIC ENTRY</text>
+            <rect class="block block-user" x="56" y="102" width="126" height="78" rx="14"></rect>
+            <text class="block-title" x="78" y="134">Browser</text>
+            <text class="block-subtitle" x="78" y="156">Desktop / mobile UI</text>
+            <rect class="block block-edge" x="206" y="102" width="120" height="78" rx="14"></rect>
+            <text class="block-title" x="224" y="134">Access</text>
+            <text class="block-subtitle" x="224" y="156">Cloudflare</text>
+            <path class="connector strong" d="M 182 139 L 206 139"></path>
+            <rect class="limit-badge" x="64" y="212" width="246" height="36" rx="18"></rect>
+            <text class="badge-text" x="84" y="235">Access email authorizes browser API calls</text>
+
+            <rect class="zone zone-server" x="400" y="42" width="390" height="520" rx="20"></rect>
+            <text class="zone-label" x="446" y="74">DEES-WORKBENCH</text>
+            <rect class="block block-server" x="452" y="104" width="276" height="82" rx="16"></rect>
+            <text class="block-title" x="484" y="136">host_router.py</text>
+            <text class="block-subtitle" x="484" y="158">Static routes + authenticated APIs</text>
+            <path class="connector strong" d="M 326 139 C 360 139, 384 139, 452 139"></path>
+
+            <rect class="block block-ui" x="430" y="232" width="142" height="82" rx="14"></rect>
+            <text class="block-title" x="458" y="264">Static UI</text>
+            <text class="block-subtitle" x="458" y="286">index, mobile</text>
+            <text class="block-subtitle" x="458" y="302">manual</text>
+            <rect class="block block-api" x="604" y="232" width="150" height="82" rx="14"></rect>
+            <text class="block-title" x="632" y="264">GET APIs</text>
+            <text class="block-subtitle" x="632" y="286">dashboard, budget</text>
+            <text class="block-subtitle" x="632" y="302">health, state audit</text>
+            <path class="connector muted" d="M 548 186 L 500 232"></path>
+            <path class="connector muted" d="M 618 186 L 680 232"></path>
+
+            <rect class="block block-tool" x="430" y="362" width="150" height="82" rx="14"></rect>
+            <text class="block-title" x="456" y="394">POST state</text>
+            <text class="block-subtitle" x="456" y="416">User write only</text>
+            <rect class="block block-ai" x="604" y="362" width="150" height="82" rx="14"></rect>
+            <text class="block-title" x="630" y="394">POST sync</text>
+            <text class="block-subtitle" x="630" y="416">Internal token only</text>
+            <path class="connector strong" d="M 680 314 L 680 362"></path>
+            <path class="connector muted" d="M 500 314 L 500 362"></path>
+
+            <rect class="block block-data" x="452" y="488" width="130" height="64" rx="14"></rect>
+            <text class="block-title" x="484" y="516">SQLite</text>
+            <text class="block-subtitle" x="484" y="536">projects + audit</text>
+            <rect class="block block-log" x="616" y="488" width="128" height="64" rx="14"></rect>
+            <text class="block-title" x="642" y="516">Backups</text>
+            <text class="block-subtitle" x="642" y="536">DB + sentinel</text>
+            <path class="connector strong" d="M 506 444 L 506 488"></path>
+            <path class="connector muted" d="M 680 444 L 680 488"></path>
+            <path class="connector muted" d="M 580 520 L 616 520"></path>
+
+            <rect class="zone zone-external" x="846" y="42" width="310" height="520" rx="20"></rect>
+            <text class="zone-label" x="874" y="74">INTERNAL + EXTERNAL SERVICES</text>
+            <rect class="block block-tool" x="888" y="104" width="226" height="82" rx="16"></rect>
+            <text class="block-title" x="920" y="136">Daily Agent</text>
+            <text class="block-subtitle" x="920" y="158">Uses server token for APIs</text>
+            <rect class="block block-ai" x="888" y="236" width="226" height="82" rx="16"></rect>
+            <text class="block-title" x="920" y="268">OpenAI Responses</text>
+            <text class="block-subtitle" x="920" y="290">One project per guarded call</text>
+            <rect class="block block-log" x="888" y="370" width="226" height="82" rx="16"></rect>
+            <text class="block-title" x="920" y="402">Resume Log</text>
+            <text class="block-subtitle" x="920" y="424">codex resume commands</text>
+            <path class="connector muted" d="M 754 400 C 806 384, 822 146, 888 146"></path>
+            <path class="connector strong" d="M 754 400 C 820 404, 820 278, 888 278"></path>
+            <path class="connector muted" d="M 754 274 C 820 274, 828 412, 888 412"></path>
+            <path class="connector strong" d="M 888 300 C 832 388, 812 506, 744 520"></path>
+
+            <rect class="caption" x="270" y="584" width="650" height="44" rx="18"></rect>
+            <text class="caption-text" x="308" y="611">Browser writes are state-only. AI sync is internal-token-only. All API reads require Access email or token.</text>
+          </svg>
+        </div>
+      </section>
+
+      <section class="manual-grid" aria-label="Dashboard features">
+        <article class="manual-panel">
+          <span class="label">Feature</span>
+          <h2>Project List</h2>
+          <p>Cards show state, summary, path, next action, blockers, and update time. State toggles filter the portfolio without changing project data.</p>
+        </article>
+        <article class="manual-panel">
+          <span class="label">Feature</span>
+          <h2>Command Center</h2>
+          <p>The selected-project panel keeps the work surface focused: next moves, blockers, time estimate, handoff path, and action buttons.</p>
+        </article>
+        <article class="manual-panel">
+          <span class="label">Feature</span>
+          <h2>Resume Helpers</h2>
+          <p>ChatGPT copies a context packet. Codex copies an SSH command that resumes the latest matching server session. Terminal opens an SSH shell in the project folder.</p>
+        </article>
+        <article class="manual-panel">
+          <span class="label">Feature</span>
+          <h2>AI Sync</h2>
+          <p>Browser users can change only the selected project state. AI sync remains an internal-token-only automation path.</p>
+        </article>
+      </section>
+
+      <section class="manual-section" aria-labelledby="todo-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Roadmap</span>
+            <h2 id="todo-title">Current TODOs</h2>
+          </div>
+        </div>
+        <div class="todo-list">
+          <article class="todo-item">
+            <span>01</span>
+            <p>Keep the SQLite project database current as project statuses and handoffs change.</p>
+          </article>
+          <article class="todo-item priority">
+            <span>02</span>
+            <p>Keep browser writes limited to project state until broader edit forms have a reviewed auth and rollback plan.</p>
+          </article>
+          <article class="todo-item">
+            <span>03</span>
+            <p>Decide whether to build a generator that reads local handoff/status files and automatically rebuilds dashboard data.</p>
+          </article>
+          <article class="todo-item">
+            <span>04</span>
+            <p>Consider adding GitHub links to project cards later.</p>
+          </article>
+          <article class="todo-item">
+            <span>05</span>
+            <p>Keep secrets and private credentials out of dashboard-visible data.</p>
+          </article>
+          <article class="todo-item">
+            <span>06</span>
+            <p>Keep Cloudflare Access in front of the public dashboard hostname.</p>
+          </article>
+          <article class="todo-item">
+            <span>07</span>
+            <p>Use the dashboard in daily work before doing more visual tweaks.</p>
+          </article>
+          <article class="todo-item">
+            <span>08</span>
+            <p>Review the first `project-dashboard-daily-agent` run after midnight UTC and decide whether automatically detected `Staged` folders should remain, be renamed, or be hidden.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="manual-section" aria-labelledby="sync-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Guardrails</span>
+            <h2 id="sync-title">AI Sync Safety Model</h2>
+          </div>
+        </div>
+        <div class="guardrail-lane">
+          <div class="guardrail-step">
+            <strong>Internal Only</strong>
+            <span>Daily agent or server token</span>
+          </div>
+          <div class="guardrail-step">
+            <strong>Preflight</strong>
+            <span>Write auth, API key, daily calls, cooldown, per-run estimate</span>
+          </div>
+          <div class="guardrail-step">
+            <strong>One Project</strong>
+            <span>No bulk prompt by default</span>
+          </div>
+          <div class="guardrail-step">
+            <strong>Validation</strong>
+            <span>Schema, state enum, string lists, backup</span>
+          </div>
+          <div class="guardrail-step">
+            <strong>Spend Log</strong>
+            <span>Input tokens, output tokens, estimated cost</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="manual-section" aria-labelledby="commands-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Operations</span>
+            <h2 id="commands-title">Common Commands</h2>
+          </div>
+        </div>
+        <div class="manual-command-grid">
+          <div>
+            <h3>Validate Data</h3>
+            <pre><code>cd /srv/cloud-mirror/project-dashboard
+set -a; . ~/.config/project-dashboard.env; set +a
+curl -fsS -H 'Host: projects.dees-workbench.com' \
+  -H "X-Project-Dashboard-Write-Token: $PROJECT_DASHBOARD_WRITE_TOKEN" \
+  http://127.0.0.1:8090/api/health
+bin/project-dashboard-ingest data/examples/project-update.json</code></pre>
+          </div>
+          <div>
+            <h3>Run Daily Agent Dry Run</h3>
+            <pre><code>/srv/cloud-mirror/project-dashboard/bin/project-dashboard-daily-agent --dry-run</code></pre>
+          </div>
+          <div>
+            <h3>Check Timer</h3>
+            <pre><code>systemctl --user status project-dashboard-daily-agent.timer --no-pager
+journalctl --user -u project-dashboard-daily-agent.service --since today --no-pager</code></pre>
+          </div>
+          <div>
+            <h3>Check API Budget</h3>
+            <pre><code>set -a; . ~/.config/project-dashboard.env; set +a
+curl -fsS -H 'Host: projects.dees-workbench.com' \
+  -H "X-Project-Dashboard-Write-Token: $PROJECT_DASHBOARD_WRITE_TOKEN" \
+  http://127.0.0.1:8090/api/ai-budget</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="manual-section" aria-labelledby="api-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Reference</span>
+            <h2 id="api-title">API Surface</h2>
+          </div>
+        </div>
+        <div class="manual-table-wrap">
+          <table class="manual-table">
+            <thead>
+              <tr>
+                <th>Route</th>
+                <th>Purpose</th>
+                <th>Write Risk</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>`GET /api/dashboard`</td>
+                <td>Returns the authenticated SQLite-backed dashboard payload used by desktop and mobile.</td>
+                <td>None; API auth required.</td>
+              </tr>
+              <tr>
+                <td>`GET /api/health`</td>
+                <td>Reports SQLite availability, project count, schema version, and generated timestamp.</td>
+                <td>None; API auth required.</td>
+              </tr>
+              <tr>
+                <td>`GET /api/ai-budget`</td>
+                <td>Reads local spend metadata and guardrail state.</td>
+                <td>None; API auth required.</td>
+              </tr>
+              <tr>
+                <td>`GET /api/codex-resume-command`</td>
+                <td>Finds the newest matching `codex resume` command from the server resume log.</td>
+                <td>None; API auth required.</td>
+              </tr>
+              <tr>
+                <td>`GET /api/state-audit`</td>
+                <td>Returns recent project-state changes from the SQLite audit table.</td>
+                <td>None; API auth required.</td>
+              </tr>
+              <tr>
+                <td>`POST /api/project-state`</td>
+                <td>Requires allowed Cloudflare Access email or server-only write token, then changes one selected project's state.</td>
+                <td>Writes SQLite after validation, backup, audit, and verification.</td>
+              </tr>
+              <tr>
+                <td>`POST /api/sync-selected-project`</td>
+                <td>Requires server-only write token, then runs one guarded OpenAI sync for one selected project.</td>
+                <td>Writes SQLite after validation, backup, audit, and verification.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="manual-section" aria-labelledby="daily-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Automation</span>
+            <h2 id="daily-title">Daily Activity Agent</h2>
+          </div>
+        </div>
+        <div class="architecture-diagram compact-diagram" role="img" aria-label="The daily agent runs at midnight, reads SQLite, scans recent files, adds staged folders through ingest, and syncs a capped queue through authenticated APIs.">
+          <svg viewBox="0 0 1180 370" aria-hidden="true">
+            <defs>
+              <marker id="arrow-daily" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z"></path>
+              </marker>
+            </defs>
+            <rect class="block block-tool" x="46" y="112" width="150" height="82" rx="16"></rect>
+            <text class="block-title" x="74" y="146">Timer</text>
+            <text class="block-subtitle" x="74" y="170">00:00 UTC</text>
+
+            <rect class="block block-data" x="274" y="82" width="170" height="82" rx="16"></rect>
+            <text class="block-title" x="304" y="116">SQLite Read</text>
+            <text class="block-subtitle" x="304" y="140">Known projects</text>
+            <rect class="limit-badge" x="296" y="190" width="126" height="34" rx="17"></rect>
+            <text class="badge-text" x="316" y="212">token auth</text>
+
+            <rect class="block block-server" x="520" y="82" width="174" height="82" rx="16"></rect>
+            <text class="block-title" x="548" y="116">File Scan</text>
+            <text class="block-subtitle" x="548" y="140">24h lookback</text>
+            <rect class="limit-badge" x="536" y="190" width="142" height="34" rx="17"></rect>
+            <text class="badge-text" x="556" y="212">1500 files max</text>
+
+            <rect class="block block-tool" x="770" y="82" width="154" height="82" rx="16"></rect>
+            <text class="block-title" x="798" y="116">Ingest</text>
+            <text class="block-subtitle" x="798" y="140">--apply staged rows</text>
+            <rect class="block block-ai" x="1000" y="82" width="142" height="82" rx="16"></rect>
+            <text class="block-title" x="1028" y="116">AI Sync</text>
+            <text class="block-subtitle" x="1028" y="140">internal token</text>
+
+            <path class="connector daily" d="M 196 153 L 274 123"></path>
+            <path class="connector daily" d="M 444 123 L 520 123"></path>
+            <path class="connector daily" d="M 694 123 L 770 123"></path>
+            <path class="connector daily" d="M 924 123 L 1000 123"></path>
+            <path class="connector muted" d="M 1072 164 C 1072 250, 607 272, 607 164"></path>
+            <rect class="caption" x="310" y="270" width="560" height="56" rx="18"></rect>
+            <text class="caption-text" x="344" y="294">Guardrails still apply: max new folders, max syncs, cooldown, daily budget, per-run estimate, and API auth.</text>
+            <text class="caption-text" x="344" y="312">New project records go through ingest validation, SQLite backup, audit, and verification.</text>
+          </svg>
+        </div>
+      </section>
+
+      <section class="manual-section" aria-labelledby="files-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Map</span>
+            <h2 id="files-title">Important Files</h2>
+          </div>
+        </div>
+        <div class="file-map">
+          <div><strong>`index.html`</strong><span>Main desktop dashboard</span></div>
+          <div><strong>`mobile.html`</strong><span>Compact mobile dashboard</span></div>
+          <div><strong>`manual.html`</strong><span>This operator manual</span></div>
+          <div><strong>`assets/app.js`</strong><span>Desktop rendering and dashboard actions</span></div>
+          <div><strong>`assets/mobile.js`</strong><span>Mobile rendering and dashboard actions</span></div>
+          <div><strong>`host_router.py`</strong><span>Host routing, APIs, AI sync, budget guardrails</span></div>
+          <div><strong>`bin/project-dashboard-ingest`</strong><span>Canonical data validator and writer</span></div>
+          <div><strong>`bin/project-dashboard-daily-agent`</strong><span>Midnight activity scan and guarded sync queue</span></div>
+          <div><strong>`data/projects.sqlite3`</strong><span>SQLite source of truth for projects, sessions, spend, and audit</span></div>
+          <div><strong>`data/ingest-audit.jsonl`</strong><span>Fallback append-only audit trail for ingest attempts</span></div>
+          <div><strong>`data/backups/`</strong><span>Timestamped JSON and SQLite backups for rollback</span></div>
+          <div><strong>`data/projects.json`</strong><span>Diagnostic sentinel only; not a browser fallback</span></div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
