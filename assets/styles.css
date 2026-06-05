@@ -238,7 +238,7 @@ h3 {
 
 .overview {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -286,10 +286,6 @@ h3 {
 
 .overview article:nth-child(4)::before {
   background: rgba(178, 140, 255, 0.14);
-}
-
-.overview article:nth-child(5)::before {
-  background: rgba(255, 209, 102, 0.13);
 }
 
 .overview strong {
