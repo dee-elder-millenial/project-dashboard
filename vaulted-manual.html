@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vaulted Manual</title>
+    <link rel="stylesheet" href="assets/styles.css?v=20260605-manual-auth-sqlite">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <img src="assets/project-mark.svg?v=20260605-less-cute" alt="" width="44" height="44">
+        <div>
+          <h1>Vaulted Manual</h1>
+          <p>How the Mac vault app opens, edits, locks, and protects encrypted recovery files without storing plaintext in cloud-mirror.</p>
+        </div>
+      </div>
+      <nav class="header-actions" aria-label="Manual links">
+        <a href="index.html?desktop=1">Dashboard</a>
+        <a href="manual.html">Project Manual</a>
+        <a href="https://drive.google.com/drive/folders/16vqfl4iu_zHBiXiSXzEHmC2nUThB4G2G">Recovery Tools</a>
+      </nav>
+    </header>
+
+    <main class="manual-main">
+      <section class="manual-hero" aria-label="Vaulted overview">
+        <div>
+          <span class="label">Operator Guide</span>
+          <h2>A Mac front end for encrypted recovery files that should never live in plaintext sync folders.</h2>
+          <p>
+            Vaulted keeps the encrypted archive on `dees-workbench`, opens it from a Mac into a temporary RAM disk,
+            lets Finder handle ordinary edits, then saves the RAM disk back into a new encrypted archive and ejects it.
+            The project code lives in `/srv/cloud-mirror/vaulted`; encrypted vault files live outside the project under
+            `/srv/cloud-mirror/secure-vaults`.
+          </p>
+        </div>
+        <div class="manual-callout">
+          <span class="label">Golden Rule</span>
+          <p>Do not store recovery codes, passphrases, `.gpg` vaults, or decrypted vault contents inside the Vaulted repo, Google Drive tooling folders, or ordinary cloud-mirror project folders.</p>
+        </div>
+      </section>
+
+      <section class="overview manual-stats" aria-label="Vaulted facts">
+        <article>
+          <span class="label">App</span>
+          <strong>Swift</strong>
+          <p>`Vaulted.app`</p>
+        </article>
+        <article>
+          <span class="label">Plaintext</span>
+          <strong>RAM Disk</strong>
+          <p>Temporary Mac mount only</p>
+        </article>
+        <article>
+          <span class="label">Vault</span>
+          <strong>GPG</strong>
+          <p>AES256 symmetric archive</p>
+        </article>
+        <article>
+          <span class="label">Server</span>
+          <strong>SSH</strong>
+          <p>`dee@dees-workbench.local`</p>
+        </article>
+        <article>
+          <span class="label">Auto-Lock</span>
+          <strong>5 min</strong>
+          <p>Default helper timeout</p>
+        </article>
+      </section>
+
+      <section class="manual-section" aria-labelledby="architecture-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Block Diagram</span>
+            <h2 id="architecture-title">Vault Architecture</h2>
+          </div>
+        </div>
+        <div class="architecture-diagram" role="img" aria-label="Vaulted runs on a Mac, sends SSH commands to dees-workbench, decrypts an encrypted GPG archive into a Mac RAM disk, then writes a verified encrypted archive back to secure-vaults.">
+          <svg viewBox="0 0 1180 600" aria-hidden="true">
+            <defs>
+              <marker id="arrow-main" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z"></path>
+              </marker>
+              <marker id="arrow-muted" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z"></path>
+              </marker>
+            </defs>
+
+            <rect class="zone zone-public" x="30" y="44" width="338" height="474" rx="20"></rect>
+            <text class="zone-label" x="56" y="78">MAC CLIENT</text>
+            <rect class="block block-user" x="70" y="112" width="238" height="82" rx="16"></rect>
+            <text class="block-title" x="98" y="146">Vaulted.app</text>
+            <text class="block-subtitle" x="98" y="170">Swift/AppKit UI</text>
+            <rect class="block block-ui" x="70" y="238" width="238" height="82" rx="16"></rect>
+            <text class="block-title" x="98" y="272">Passphrase Field</text>
+            <text class="block-subtitle" x="98" y="296">stdin to helper, not CLI args</text>
+            <rect class="block block-data" x="70" y="364" width="238" height="82" rx="16"></rect>
+            <text class="block-title" x="98" y="398">RAM Disk</text>
+            <text class="block-subtitle" x="98" y="422">Finder edits plaintext here</text>
+            <path class="connector muted" d="M 190 194 L 190 238"></path>
+            <path class="connector strong" d="M 190 320 L 190 364"></path>
+
+            <rect class="zone zone-server" x="420" y="44" width="354" height="474" rx="20"></rect>
+            <text class="zone-label" x="450" y="78">DEES-WORKBENCH</text>
+            <rect class="block block-server" x="470" y="112" width="236" height="82" rx="16"></rect>
+            <text class="block-title" x="498" y="146">open-recovery-vault</text>
+            <text class="block-subtitle" x="498" y="170">Remote helper over SSH</text>
+            <rect class="block block-tool" x="470" y="238" width="236" height="82" rx="16"></rect>
+            <text class="block-title" x="498" y="272">Checkout Lock</text>
+            <text class="block-subtitle" x="498" y="296">Atomic directory lease</text>
+            <rect class="block block-data" x="470" y="364" width="236" height="82" rx="16"></rect>
+            <text class="block-title" x="498" y="398">Secure Vaults</text>
+            <text class="block-subtitle" x="498" y="422">`.tar.gz.gpg` archive</text>
+            <path class="connector strong" d="M 308 153 C 368 153, 392 153, 470 153"></path>
+            <path class="connector muted" d="M 588 194 L 588 238"></path>
+            <path class="connector strong" d="M 588 320 L 588 364"></path>
+
+            <rect class="zone zone-external" x="834" y="44" width="314" height="474" rx="20"></rect>
+            <text class="zone-label" x="862" y="78">EXCLUDED STORAGE</text>
+            <rect class="block block-log" x="878" y="112" width="222" height="72" rx="16"></rect>
+            <text class="block-title" x="908" y="144">Vaulted Repo</text>
+            <text class="block-subtitle" x="908" y="166">Code, docs, packages only</text>
+            <rect class="block block-log" x="878" y="236" width="222" height="72" rx="16"></rect>
+            <text class="block-title" x="908" y="268">Google Drive</text>
+            <text class="block-subtitle" x="908" y="290">Recovery Tools scripts only</text>
+            <rect class="block block-ai" x="878" y="360" width="222" height="72" rx="16"></rect>
+            <text class="block-title" x="908" y="392">Never Here</text>
+            <text class="block-subtitle" x="908" y="414">Plaintext recovery files</text>
+            <path class="connector muted" d="M 706 405 C 770 405, 796 150, 878 150"></path>
+            <path class="connector muted" d="M 706 405 C 786 405, 800 272, 878 272"></path>
+            <path class="connector strong" d="M 878 396 C 764 506, 338 506, 204 446"></path>
+
+            <rect class="caption" x="256" y="540" width="666" height="42" rx="18"></rect>
+            <text class="caption-text" x="294" y="566">Only the encrypted archive is durable. Plaintext should exist only in the temporary RAM disk while the vault is open.</text>
+          </svg>
+        </div>
+      </section>
+
+      <section class="manual-grid" aria-label="Vaulted features">
+        <article class="manual-panel">
+          <span class="label">Feature</span>
+          <h2>Choose Vault</h2>
+          <p>Selects a `.gpg` archive from the secure-vaults mirror and maps Mac paths to the matching `/srv/cloud-mirror/secure-vaults` server path.</p>
+        </article>
+        <article class="manual-panel">
+          <span class="label">Feature</span>
+          <h2>Secure Prompt</h2>
+          <p>The passphrase is entered in the app UI and sent to the helper over stdin. It is not placed on the process command line.</p>
+        </article>
+        <article class="manual-panel">
+          <span class="label">Feature</span>
+          <h2>RAM Editing</h2>
+          <p>Finder opens a temporary RAM disk for ordinary file edits. Cloud sync folders do not receive plaintext vault contents.</p>
+        </article>
+        <article class="manual-panel">
+          <span class="label">Feature</span>
+          <h2>Auto-Lock</h2>
+          <p>Lock requests run on button press, app quit, window close, system sleep, or the default 300-second auto-lock timer.</p>
+        </article>
+      </section>
+
+      <section class="manual-section" aria-labelledby="open-flow-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Flowchart</span>
+            <h2 id="open-flow-title">Open, Edit, Lock</h2>
+          </div>
+        </div>
+        <div class="architecture-diagram compact-diagram" role="img" aria-label="Vaulted opens the app, chooses an encrypted vault, checks out a lock, decrypts to a RAM disk, edits files, re-encrypts, verifies, ejects, and releases the lock.">
+          <svg viewBox="0 0 1180 410" aria-hidden="true">
+            <defs>
+              <marker id="arrow-daily" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z"></path>
+              </marker>
+            </defs>
+            <rect class="block block-user" x="38" y="110" width="126" height="74" rx="15"></rect>
+            <text class="block-title" x="66" y="140">Open App</text>
+            <text class="block-subtitle" x="66" y="162">Pick vault</text>
+
+            <rect class="block block-tool" x="214" y="110" width="138" height="74" rx="15"></rect>
+            <text class="block-title" x="244" y="140">Checkout</text>
+            <text class="block-subtitle" x="244" y="162">Lock directory</text>
+
+            <rect class="block block-data" x="402" y="110" width="138" height="74" rx="15"></rect>
+            <text class="block-title" x="432" y="140">Decrypt</text>
+            <text class="block-subtitle" x="432" y="162">gpg + tar</text>
+
+            <rect class="block block-ui" x="590" y="110" width="138" height="74" rx="15"></rect>
+            <text class="block-title" x="620" y="140">Mount</text>
+            <text class="block-subtitle" x="620" y="162">RAM disk</text>
+
+            <rect class="block block-server" x="778" y="110" width="138" height="74" rx="15"></rect>
+            <text class="block-title" x="808" y="140">Edit</text>
+            <text class="block-subtitle" x="808" y="162">Finder</text>
+
+            <rect class="block block-data" x="966" y="110" width="138" height="74" rx="15"></rect>
+            <text class="block-title" x="996" y="140">Lock</text>
+            <text class="block-subtitle" x="996" y="162">Save archive</text>
+
+            <path class="connector daily" d="M 164 147 L 214 147"></path>
+            <path class="connector daily" d="M 352 147 L 402 147"></path>
+            <path class="connector daily" d="M 540 147 L 590 147"></path>
+            <path class="connector daily" d="M 728 147 L 778 147"></path>
+            <path class="connector daily" d="M 916 147 L 966 147"></path>
+
+            <rect class="block block-log" x="404" y="258" width="154" height="74" rx="15"></rect>
+            <text class="block-title" x="432" y="288">Verify</text>
+            <text class="block-subtitle" x="432" y="310">Decrypt list OK</text>
+
+            <rect class="block block-tool" x="626" y="258" width="154" height="74" rx="15"></rect>
+            <text class="block-title" x="654" y="288">Eject</text>
+            <text class="block-subtitle" x="654" y="310">Clear plaintext</text>
+
+            <rect class="block block-log" x="848" y="258" width="154" height="74" rx="15"></rect>
+            <text class="block-title" x="876" y="288">Release</text>
+            <text class="block-subtitle" x="876" y="310">Remove lock</text>
+
+            <path class="connector muted" d="M 1036 184 C 1036 250, 558 224, 488 258"></path>
+            <path class="connector daily" d="M 558 295 L 626 295"></path>
+            <path class="connector daily" d="M 780 295 L 848 295"></path>
+
+            <rect class="caption" x="180" y="360" width="820" height="34" rx="17"></rect>
+            <text class="caption-text" x="210" y="382">If save fails, the RAM disk stays mounted so changes are not lost. The old encrypted archive remains the durable fallback.</text>
+          </svg>
+        </div>
+      </section>
+
+      <section class="manual-section" aria-labelledby="lock-flow-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Flowchart</span>
+            <h2 id="lock-flow-title">Checkout Lock Behavior</h2>
+          </div>
+        </div>
+        <div class="guardrail-lane">
+          <div class="guardrail-step">
+            <strong>Lock Path</strong>
+            <span>`/srv/cloud-mirror/secure-vaults/.locks/&lt;vault&gt;.lock`</span>
+          </div>
+          <div class="guardrail-step">
+            <strong>Acquire</strong>
+            <span>Helper creates an atomic remote directory before decrypting.</span>
+          </div>
+          <div class="guardrail-step">
+            <strong>Block</strong>
+            <span>If the lock exists and is not stale, the vault does not open.</span>
+          </div>
+          <div class="guardrail-step">
+            <strong>Lease</strong>
+            <span>Default stale-lock lease is 30 minutes.</span>
+          </div>
+          <div class="guardrail-step">
+            <strong>Release</strong>
+            <span>Successful save removes the lock after the encrypted archive is verified.</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="manual-section" aria-labelledby="commands-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Operations</span>
+            <h2 id="commands-title">Common Commands</h2>
+          </div>
+        </div>
+        <div class="manual-command-grid">
+          <div>
+            <h3>Check Mac and Helper Activity</h3>
+            <pre><code>ps -axo pid,ppid,stat,command | rg '/Volumes/cloud-mirror/vaulted|Vaulted\\.app|open-recovery-vault-ramdisk\\.sh|/Volumes/RecoveryVault' || true
+hdiutil info | rg '/Volumes/RecoveryVault|RecoveryVault' || true
+mount | rg 'RecoveryVault' || true</code></pre>
+          </div>
+          <div>
+            <h3>Check Remote Locks</h3>
+            <pre><code>ssh -n -T -o LogLevel=ERROR dee@dees-workbench.local \
+  "find /srv/cloud-mirror/secure-vaults/.locks -maxdepth 2 -print 2&gt;/dev/null | sort"</code></pre>
+          </div>
+          <div>
+            <h3>Build Native App</h3>
+            <pre><code>swiftc /Volumes/cloud-mirror/vaulted/vaulted-mac-app/Sources/main.swift \
+  -o /Volumes/cloud-mirror/vaulted/Vaulted.app/Contents/MacOS/Vaulted \
+  -framework AppKit</code></pre>
+          </div>
+          <div>
+            <h3>Package Safely</h3>
+            <pre><code>find /Volumes/cloud-mirror/vaulted -name '._*' -type f -delete
+find /Volumes/cloud-mirror/vaulted -name '.DS_Store' -type f -delete
+codesign --force --deep --sign - /Volumes/cloud-mirror/vaulted/Vaulted.app
+cd /Volumes/cloud-mirror/vaulted
+COPYFILE_DISABLE=1 zip -qry -X Vaulted.app.zip Vaulted.app</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="manual-section" aria-labelledby="failures-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Recovery</span>
+            <h2 id="failures-title">Failure Handling</h2>
+          </div>
+        </div>
+        <div class="todo-list">
+          <article class="todo-item priority">
+            <span>01</span>
+            <p>If encryption or verification fails, do not eject or delete the RAM disk. Keep it mounted and fix the save path first.</p>
+          </article>
+          <article class="todo-item">
+            <span>02</span>
+            <p>If the Mac loses power while open, unsaved RAM-disk edits may be lost. The previous encrypted archive should still be intact.</p>
+          </article>
+          <article class="todo-item">
+            <span>03</span>
+            <p>If a stale lock blocks opening, confirm no Mac has the vault open before removing the lock directory.</p>
+          </article>
+          <article class="todo-item">
+            <span>04</span>
+            <p>If Finder creates AppleDouble sidecars, clean `._*` and `.DS_Store` before committing or packaging.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="manual-section" aria-labelledby="files-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Map</span>
+            <h2 id="files-title">Important Files</h2>
+          </div>
+        </div>
+        <div class="file-map">
+          <div><strong>`/srv/cloud-mirror/vaulted`</strong><span>Project folder with source, docs, packages, and handoff.</span></div>
+          <div><strong>`Vaulted.app`</strong><span>Native Mac UI for choosing, opening, locking, and auto-locking vaults.</span></div>
+          <div><strong>`vaulted-mac-app/Sources/main.swift`</strong><span>Swift/AppKit source for the native UI.</span></div>
+          <div><strong>`recovery-vault-mac-app/open-recovery-vault-ramdisk.sh`</strong><span>SSH/GPG/tar/RAM-disk helper script.</span></div>
+          <div><strong>`/srv/cloud-mirror/secure-vaults`</strong><span>Durable encrypted archive location; outside the Vaulted project folder.</span></div>
+          <div><strong>`/srv/cloud-mirror/secure-vaults/.locks`</strong><span>Remote checkout locks that prevent double-open writes.</span></div>
+          <div><strong>`WHAT_WE_DID.md`</strong><span>Build narrative and summary for future continuation.</span></div>
+          <div><strong>`HANDOFF.md`</strong><span>Current state, caveats, quick checks, and packaging commands.</span></div>
+        </div>
+      </section>
+
+      <section class="manual-section" aria-labelledby="todo-title">
+        <div class="section-heading">
+          <div>
+            <span class="label">Roadmap</span>
+            <h2 id="todo-title">Next Good Improvements</h2>
+          </div>
+        </div>
+        <div class="todo-list">
+          <article class="todo-item">
+            <span>01</span>
+            <p>Add a one-command build/package script that compiles Swift, syncs plist/icon/helper resources, signs, zips, and verifies the package.</p>
+          </article>
+          <article class="todo-item">
+            <span>02</span>
+            <p>Add a non-secret smoke test for wrong passphrase cleanup and failed-save behavior.</p>
+          </article>
+          <article class="todo-item">
+            <span>03</span>
+            <p>Add a visible stale-lock recovery flow in the UI with a clear warning and lock metadata display.</p>
+          </article>
+          <article class="todo-item">
+            <span>04</span>
+            <p>Consider moving active git work off the SMB-mounted folder if AppleDouble sidecars keep creating noise.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
