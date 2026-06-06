@@ -30,7 +30,8 @@ DATA_PATH = DASHBOARD_ROOT / "data" / "projects.json"
 DB_PATH = DASHBOARD_ROOT / "data" / "projects.sqlite3"
 BACKUP_ROOT = DASHBOARD_ROOT / "data" / "backups"
 INGEST_PATH = DASHBOARD_ROOT / "bin" / "project-dashboard-ingest"
-RESUME_LOG_PATH = Path("/srv/cloud-mirror/temp/codex-dees-workbench-resume/resume-commands.md")
+RESUME_LOG_PATH = Path("/srv/cloud-mirror/temp/codex-dees-workbench-resume/resume-commands.log")
+RESUME_MARKDOWN_ARCHIVE_PATH = Path("/srv/cloud-mirror/temp/codex-dees-workbench-resume/resume-commands.md")
 ALLOWED_CONTEXT_ROOTS = (
     Path("/srv/cloud-mirror").resolve(),
     Path("/cloud-mirror").resolve(),
@@ -644,11 +645,37 @@ def strip_markdown_code(value: str) -> str:
 
 
 def codex_resume_entries() -> list[dict[str, str]]:
-    if not RESUME_LOG_PATH.exists():
-        return []
-
     entries: list[dict[str, str]] = []
-    for line in RESUME_LOG_PATH.read_text(encoding="utf-8", errors="replace").splitlines():
+    if RESUME_LOG_PATH.exists():
+        current: dict[str, str] | None = None
+        for line in RESUME_LOG_PATH.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.rstrip("\n")
+            if line == "--- codex-resume-entry ---":
+                current = {}
+                continue
+            if line == "--- end ---":
+                if current is None:
+                    continue
+                command = current.get("resume_command", "")
+                if command.startswith("codex resume "):
+                    entries.append(
+                        {
+                            "date": current.get("date_utc", ""),
+                            "machine": current.get("machine", ""),
+                            "working_dir": current.get("working_dir", ""),
+                            "command": command,
+                            "notes": current.get("task", ""),
+                        }
+                    )
+                current = None
+                continue
+            if current is not None and "=" in line:
+                key, value = line.split("=", 1)
+                current[key.strip()] = value.strip()
+    if not RESUME_MARKDOWN_ARCHIVE_PATH.exists():
+        return entries
+
+    for line in RESUME_MARKDOWN_ARCHIVE_PATH.read_text(encoding="utf-8", errors="replace").splitlines():
         if "codex resume " not in line or not line.lstrip().startswith("|"):
             continue
         parts = [strip_markdown_code(part) for part in line.strip().strip("|").split("|")]

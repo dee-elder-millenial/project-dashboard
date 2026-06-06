@@ -31,7 +31,7 @@ Browser/user writes are limited to project state changes through `POST /api/proj
 
 At the start of every Codex session running on `dees-workbench`, create or update a resume entry in:
 
-`/srv/cloud-mirror/temp/codex-dees-workbench-resume/resume-commands.md`
+`/srv/cloud-mirror/temp/codex-dees-workbench-resume/resume-commands.log`
 
 Prefer using the helper:
 
@@ -45,4 +45,4 @@ Use the current Codex thread id from `CODEX_THREAD_ID` when available. The resum
 codex resume <CODEX_THREAD_ID>
 ```
 
-Each entry should include date/time UTC, machine, working directory, exact resume command, current task, important touched files or services, and recovery steps. Keep older entries unless the user explicitly asks to remove them.
+Each entry should include date/time UTC, machine, working directory, exact resume command, current task, important touched files or services, and recovery steps. Prepend new entries and keep older entries unless the user explicitly asks to remove them.
